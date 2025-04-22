@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Academy of the Hebrew Language - Unofficial</string>
+    <string name="search_hint">Enter search term…</string>
+    <string name="search_button">Search</string>
+    <string name="error_loading">Error loading data. Please try again.</string>
+    <string name="no_results">No results found.</string>
+    <string name="loading">Loading...</string>
+</resources> 

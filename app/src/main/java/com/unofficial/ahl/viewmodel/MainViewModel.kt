@@ -33,7 +33,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // When ViewModel is created, clean old cache entries
     init {
         viewModelScope.launch {
-            repository.cleanOldCache()
         }
     }
     

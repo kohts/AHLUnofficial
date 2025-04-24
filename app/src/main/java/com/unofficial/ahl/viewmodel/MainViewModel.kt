@@ -1,19 +1,22 @@
 package com.unofficial.ahl.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.repository.HebrewWordsRepository
+import com.unofficial.ahl.repository.HebrewWordsRepository.ApiResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Date
 
 /**
  * ViewModel for the main screen
  */
-class MainViewModel : ViewModel() {
-    private val repository = HebrewWordsRepository()
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = HebrewWordsRepository(application.applicationContext)
     
     // UI state
     private val _uiState = MutableStateFlow<UiState>(UiState.Initial)
@@ -22,6 +25,17 @@ class MainViewModel : ViewModel() {
     // Search query
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    
+    // API error tracking
+    private val _apiError = MutableStateFlow<ApiError?>(null)
+    val apiError: StateFlow<ApiError?> = _apiError.asStateFlow()
+    
+    // When ViewModel is created, clean old cache entries
+    init {
+        viewModelScope.launch {
+            repository.cleanOldCache()
+        }
+    }
     
     /**
      * Update the search query
@@ -33,25 +47,44 @@ class MainViewModel : ViewModel() {
     
     /**
      * Search for Hebrew words
+     * @param forceRefresh Whether to force a fresh API request
      */
-    fun searchWords() {
+    fun searchWords(forceRefresh: Boolean = false) {
         val query = _searchQuery.value
         if (query.isBlank()) return
         
         _uiState.value = UiState.Loading
         
         viewModelScope.launch {
-            try {
-                val results = repository.searchWords(query)
-                _uiState.value = if (results.isEmpty()) {
-                    UiState.NoResults
-                } else {
-                    UiState.Success(results)
+            when (val result = repository.searchWords(query, forceRefresh)) {
+                is ApiResult.Success -> {
+                    val words = result.data
+                    _uiState.value = if (words.isEmpty()) {
+                        UiState.NoResults
+                    } else {
+                        UiState.Success(words)
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.value = UiState.Error(e.message ?: "Unknown error")
+                is ApiResult.Error -> {
+                    // Track the API error
+                    _apiError.value = ApiError(
+                        message = result.message,
+                        timestamp = Date(),
+                        searchTerm = query,
+                        statusCode = result.statusCode
+                    )
+                    
+                    _uiState.value = UiState.Error("Failed to load data. Using cached results if available.")
+                }
             }
         }
+    }
+    
+    /**
+     * Clear the current API error
+     */
+    fun clearApiError() {
+        _apiError.value = null
     }
     
     /**
@@ -60,6 +93,16 @@ class MainViewModel : ViewModel() {
     fun resetState() {
         _uiState.value = UiState.Initial
     }
+    
+    /**
+     * API Error data class
+     */
+    data class ApiError(
+        val message: String,
+        val timestamp: Date,
+        val searchTerm: String,
+        val statusCode: Int? = null
+    )
     
     /**
      * Sealed class representing the UI state

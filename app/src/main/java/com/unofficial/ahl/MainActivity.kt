@@ -308,13 +308,18 @@ fun WordItem(
                         onCopyText(copyContent)
                     }
                 )
-            }
+            },
+        horizontalAlignment = Alignment.End,
     ) {
         // Title with nikud and without
         Text(
             text = word.title,
             fontWeight = FontWeight.Bold,
-            fontSize = 18.sp
+            fontSize = 18.sp,
+            style = MaterialTheme.typography.body1.copy(
+                textAlign = TextAlign.Right,
+                textDirection = TextDirection.Rtl
+            ),
         )
         
         Spacer(modifier = Modifier.height(4.dp))
@@ -323,7 +328,11 @@ fun WordItem(
         word.definition?.let { definition ->
             Text(
                 text = definition,
-                fontSize = 14.sp
+                fontSize = 14.sp,
+                style = MaterialTheme.typography.body1.copy(
+                    textAlign = TextAlign.Right,
+                    textDirection = TextDirection.Rtl
+                ),
             )
             
             Spacer(modifier = Modifier.height(4.dp))

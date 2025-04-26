@@ -30,6 +30,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiError = MutableStateFlow<ApiError?>(null)
     val apiError: StateFlow<ApiError?> = _apiError.asStateFlow()
     
+    // Selected word details
+    private val _wordDetailsState = MutableStateFlow<WordDetailsState>(WordDetailsState.Initial)
+    val wordDetailsState: StateFlow<WordDetailsState> = _wordDetailsState.asStateFlow()
+    
+    // Selected word
+    private val _selectedWord = MutableStateFlow<HebrewWord?>(null)
+    val selectedWord: StateFlow<HebrewWord?> = _selectedWord.asStateFlow()
+    
     // When ViewModel is created, clean old cache entries
     init {
         viewModelScope.launch {
@@ -80,6 +88,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
+     * Select a word and fetch its details
+     * @param word The selected HebrewWord
+     */
+    fun selectWord(word: HebrewWord) {
+        _selectedWord.value = word
+        _wordDetailsState.value = WordDetailsState.Loading
+        
+        viewModelScope.launch {
+            when (val result = repository.fetchWordDetails(word.keyword)) {
+                is ApiResult.Success -> {
+                    _wordDetailsState.value = WordDetailsState.Success(result.data)
+                }
+                is ApiResult.Error -> {
+                    _wordDetailsState.value = WordDetailsState.Error("Failed to load details: ${result.message}")
+                    
+                    // Also track as an API error
+                    _apiError.value = ApiError(
+                        message = result.message,
+                        timestamp = Date(),
+                        searchTerm = word.keyword,
+                        statusCode = result.statusCode
+                    )
+                }
+            }
+        }
+    }
+    
+    /**
+     * Clear the current word selection
+     */
+    fun clearWordSelection() {
+        _selectedWord.value = null
+        _wordDetailsState.value = WordDetailsState.Initial
+    }
+    
+    /**
      * Clear the current API error
      */
     fun clearApiError() {
@@ -112,5 +156,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         data class Success(val words: List<HebrewWord>) : UiState()
         data object NoResults : UiState()
         data class Error(val message: String) : UiState()
+    }
+    
+    /**
+     * Sealed class representing the word details state
+     */
+    sealed class WordDetailsState {
+        data object Initial : WordDetailsState()
+        data object Loading : WordDetailsState()
+        data class Success(val detailsHtml: String) : WordDetailsState()
+        data class Error(val message: String) : WordDetailsState()
     }
 } 

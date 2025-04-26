@@ -8,6 +8,7 @@ import com.unofficial.ahl.api.NetworkModule
 import com.unofficial.ahl.database.AppDatabase
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.model.SearchCache
+import com.unofficial.ahl.util.HtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Date
@@ -103,14 +104,46 @@ class HebrewWordsRepository(context: Context) {
     }
     
     /**
-     * Clear old cache entries that are older than 30 days
+     * Fetch detailed information about a Hebrew word from the Hebrew Academy website
+     * @param keyword The keyword from the HebrewWord object
+     * @return ApiResult with either the HTML content or error details
      */
-    suspend fun cleanOldCache() {
-        withContext(Dispatchers.IO) {
-            val thirtyDaysAgo = Date().time - TimeUnit.DAYS.toMillis(30)
-            searchCacheDao.deleteOldEntries(thirtyDaysAgo)
+    suspend fun fetchWordDetails(keyword: String): ApiResult<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Construct the URL for the word details page
+                val detailsUrl = "https://hebrew-academy.org.il/keyword/$keyword"
+                
+                // Fetch the HTML content
+                val response = api.fetchHtmlContent(detailsUrl)
+                val htmlContent = response.string()
+                
+                // Extract the relevant content using the HTML parser
+                val extractedContent = HtmlParser.extractContent(htmlContent)
+                
+                ApiResult.Success(extractedContent)
+            } catch (e: Exception) {
+                // Log the error
+                e.printStackTrace()
+                
+                // Extract HTTP status code if available
+                val statusCode = when (e) {
+                    is HttpException -> e.code()
+                    else -> null
+                }
+                
+                // Generate a meaningful error message
+                val errorMessage = when (e) {
+                    is HttpException -> "Server error: ${e.message()} (${e.code()})"
+                    is IOException -> "Network error: ${e.message}"
+                    else -> "Unknown error: ${e.message}"
+                }
+                
+                ApiResult.Error(e, errorMessage, statusCode)
+            }
         }
     }
+
     
     /**
      * Normalize the search term (trim, lowercase, etc.)

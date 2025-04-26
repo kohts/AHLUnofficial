@@ -48,6 +48,11 @@ import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalTextToolbar
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -137,7 +142,7 @@ fun AhlApp(viewModel: MainViewModel) {
                             .fillMaxWidth()
                             .padding(bottom = 16.dp)
                     )
-                    
+
                     // Search bar
                     SearchBar(
                         query = searchQuery,
@@ -198,6 +203,7 @@ fun AhlApp(viewModel: MainViewModel) {
 }
 
 @Composable
+@OptIn(ExperimentalComposeUiApi::class)
 fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
@@ -205,6 +211,7 @@ fun SearchBar(
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+
     Column(modifier = modifier) {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -217,7 +224,9 @@ fun SearchBar(
             }
             
             Spacer(modifier = Modifier.width(8.dp))
-            
+
+            val focusRequester = remember { FocusRequester() }
+
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -233,8 +242,14 @@ fun SearchBar(
                     textAlign = TextAlign.Right,
                     textDirection = TextDirection.Rtl
                 ),
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
             )
+
+            LaunchedEffect(Unit) {
+                focusRequester.requestFocus()
+            }
         }
         
         Row(
@@ -256,13 +271,33 @@ fun SearchBar(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun WordsList(
-    words: List<HebrewWord>, 
+    words: List<HebrewWord>,
     onCopyText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(modifier = modifier) {
+    // Get keyboard controller to hide keyboard on scroll
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val listState = rememberLazyListState()
+
+    val now = System.currentTimeMillis()
+
+    // Variable to track if we've hidden the keyboard
+    var keyboardLastHid by remember { mutableStateOf(now) }
+
+    // Check if list is scrolling to hide keyboard (do not hide too often)
+    if (listState.isScrollInProgress && now - keyboardLastHid > 500) {
+        // This will run every time the composition recomposes while scrolling
+        keyboardController?.hide()
+        keyboardLastHid = System.currentTimeMillis()
+    }
+    
+    LazyColumn(
+        modifier = modifier,
+        state = listState
+    ) {
         items(words) { word ->
             WordItem(
                 word = word,
@@ -447,4 +482,4 @@ fun ErrorBanner(
             }
         }
     }
-} 
+}

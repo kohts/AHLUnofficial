@@ -75,6 +75,7 @@ fun AhlApp(viewModel: MainViewModel) {
     val apiError by viewModel.apiError.collectAsState()
     val selectedWord by viewModel.selectedWord.collectAsState()
     val wordDetailsState by viewModel.wordDetailsState.collectAsState()
+    val invalidDataDetected by viewModel.invalidDataDetected.collectAsState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val scaffoldState = rememberScaffoldState()
     val coroutineScope = rememberCoroutineScope()
@@ -82,6 +83,7 @@ fun AhlApp(viewModel: MainViewModel) {
     // Pre-load string resources
     val apiErrorText = stringResource(R.string.api_error)
     val textCopiedMessage = stringResource(R.string.text_copied)
+    val invalidDataMessage = stringResource(R.string.invalid_data_format)
 
     // Control visibility of the error banner
     var showErrorBanner by remember { mutableStateOf(false) }
@@ -101,6 +103,19 @@ fun AhlApp(viewModel: MainViewModel) {
             delay(5000)
             showErrorBanner = false
             viewModel.clearApiError()
+        }
+    }
+    
+    // Show invalid data error in the top error banner
+    LaunchedEffect(invalidDataDetected) {
+        if (invalidDataDetected) {
+            errorMessage = invalidDataMessage
+            showErrorBanner = true
+            
+            // Auto-dismiss after a delay
+            delay(5000)
+            showErrorBanner = false
+            viewModel.clearInvalidDataFlag()
         }
     }
     
@@ -134,6 +149,7 @@ fun AhlApp(viewModel: MainViewModel) {
                             onDismiss = {
                                 showErrorBanner = false
                                 viewModel.clearApiError()
+                                viewModel.clearInvalidDataFlag()
                             }
                         )
                     }
@@ -337,13 +353,9 @@ fun WordItem(
     
     // Format all the content that will be copied when long-pressed
     val copyContent = buildString {
-        append(word.title)
-        append("\n")
-        word.definition?.let { 
-            append(it)
-            append("\n")
-        }
-        append(word.itemTypeName)
+        word.title?.let { append(it); append("\n") } ?: append(word.menukad ?: word.menukadWithoutNikud ?: "")
+        word.definition?.let { append(it); append("\n") }
+        word.itemTypeName?.let { append(it) }
     }
     
     Column(
@@ -366,9 +378,15 @@ fun WordItem(
             },
         horizontalAlignment = Alignment.End,
     ) {
-        // Title with nikud and without
+        // Title with nikud and without - use fallbacks if title is null
+        val displayTitle = word.title 
+            ?: word.menukad
+            ?: word.menukadWithoutNikud
+            ?: word.ktivMale
+            ?: stringResource(R.string.no_title_available)
+            
         Text(
-            text = word.title,
+            text = displayTitle,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             style = MaterialTheme.typography.body1.copy(
@@ -394,11 +412,13 @@ fun WordItem(
         }
         
         // Item type
-        Text(
-            text = word.itemTypeName,
-            fontSize = 12.sp,
-            color = MaterialTheme.colors.secondary
-        )
+        if (!word.itemTypeName.isNullOrBlank()) {
+            Text(
+                text = word.itemTypeName,
+                fontSize = 12.sp,
+                color = MaterialTheme.colors.secondary
+            )
+        }
     }
 }
 

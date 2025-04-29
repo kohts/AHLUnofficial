@@ -11,6 +11,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
@@ -31,12 +33,15 @@ fun DetailScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Text(
-                        text = selectedWord?.keyword ?: "", 
+                        text = selectedWord?.keyword ?: selectedWord?.menukad ?: 
+                              selectedWord?.menukadWithoutNikud ?: 
+                              stringResource(R.string.no_title_available), 
                         textAlign = TextAlign.Center
                     ) 
                 },
@@ -66,8 +71,15 @@ fun DetailScreen(
             ) {
                 // Title
                 selectedWord?.let { word ->
+                    // Display title if available, otherwise use fallbacks
+                    val displayTitle = word.title 
+                        ?: word.menukad
+                        ?: word.menukadWithoutNikud
+                        ?: word.ktivMale
+                        ?: stringResource(R.string.no_title_available)
+                    
                     Text(
-                        text = word.title,
+                        text = displayTitle,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
                         style = MaterialTheme.typography.h5.copy(
@@ -76,6 +88,20 @@ fun DetailScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    
+                    // Show definition if available
+                    word.definition?.let { definition ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = definition,
+                            fontSize = 16.sp,
+                            style = MaterialTheme.typography.body1.copy(
+                                textAlign = TextAlign.Right,
+                                textDirection = TextDirection.Rtl
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -88,24 +114,33 @@ fun DetailScreen(
                             LoadingIndicator()
                         }
                         is MainViewModel.WordDetailsState.Success -> {
-                            // Display the HTML content using AndroidView with TextView
-                            AndroidView(
-                                factory = { context ->
-                                    TextView(context).apply {
-                                        textAlignment = TextView.TEXT_ALIGNMENT_VIEW_END
-                                    }
-                                },
-                                update = { textView ->
-                                    // Set the text using HTML.fromHtml to parse HTML
-                                    textView.text = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                                        Html.fromHtml(detailsState.detailsHtml, Html.FROM_HTML_MODE_COMPACT)
-                                    } else {
-                                        @Suppress("DEPRECATION")
-                                        Html.fromHtml(detailsState.detailsHtml)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            if (detailsState.detailsHtml.isNotBlank()) {
+                                // Display the HTML content using AndroidView with TextView
+                                AndroidView(
+                                    factory = { context ->
+                                        TextView(context).apply {
+                                            textAlignment = TextView.TEXT_ALIGNMENT_VIEW_END
+                                        }
+                                    },
+                                    update = { textView ->
+                                        // Set the text using HTML.fromHtml to parse HTML
+                                        textView.text = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                                            Html.fromHtml(detailsState.detailsHtml, Html.FROM_HTML_MODE_COMPACT)
+                                        } else {
+                                            @Suppress("DEPRECATION")
+                                            Html.fromHtml(detailsState.detailsHtml)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.no_details_available),
+                                    color = MaterialTheme.colors.secondaryVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
                         }
                         is MainViewModel.WordDetailsState.Error -> {
                             Text(
@@ -115,6 +150,13 @@ fun DetailScreen(
                             )
                         }
                     }
+                } ?: run {
+                    // Handle case where selectedWord is null
+                    Text(
+                        text = stringResource(R.string.invalid_data_format),
+                        color = MaterialTheme.colors.error,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }

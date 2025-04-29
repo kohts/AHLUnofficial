@@ -30,6 +30,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiError = MutableStateFlow<ApiError?>(null)
     val apiError: StateFlow<ApiError?> = _apiError.asStateFlow()
     
+    // Invalid data flag - used to show a snackbar when API returns invalid data
+    private val _invalidDataDetected = MutableStateFlow(false)
+    val invalidDataDetected: StateFlow<Boolean> = _invalidDataDetected.asStateFlow()
+    
     // Selected word details
     private val _wordDetailsState = MutableStateFlow<WordDetailsState>(WordDetailsState.Initial)
     val wordDetailsState: StateFlow<WordDetailsState> = _wordDetailsState.asStateFlow()
@@ -69,6 +73,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.value = if (words.isEmpty()) {
                         UiState.NoResults
                     } else {
+                        // Check if any words have invalid data (null titles)
+                        val containsInvalidData = words.any { it.title.isNullOrBlank() }
+                        if (containsInvalidData) {
+                            _invalidDataDetected.value = true
+                        }
+                        
                         UiState.Success(words)
                     }
                 }
@@ -85,6 +95,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+    
+    /**
+     * Clear the invalid data detection flag
+     */
+    fun clearInvalidDataFlag() {
+        _invalidDataDetected.value = false
     }
     
     /**
@@ -107,7 +124,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _apiError.value = ApiError(
                         message = result.message,
                         timestamp = Date(),
-                        searchTerm = word.keyword,
+                        searchTerm = word.keyword ?: "",
                         statusCode = result.statusCode
                     )
                 }

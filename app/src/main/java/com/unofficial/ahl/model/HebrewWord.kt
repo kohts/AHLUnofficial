@@ -7,19 +7,22 @@ import com.google.gson.annotations.SerializedName
  */
 data class HebrewWord(
     @SerializedName("keyword")
-    val keyword: String,
+    val keyword: String?,
     
     @SerializedName("menukad")
     val menukad: String?,
     
     @SerializedName("keywordWithoutNikud")
-    val keywordWithoutNikud: String,
+    val keywordWithoutNikud: String?,
+    
+    @SerializedName("menukadWithoutNikud")
+    val menukadWithoutNikud: String?,
     
     @SerializedName("ktiv_male")
     val ktivMale: String?,
     
     @SerializedName("title")
-    val title: String,
+    val title: String?,
     
     @SerializedName("hagdara")
     val definition: String?,
@@ -31,11 +34,25 @@ data class HebrewWord(
     val itemType: Int,
     
     @SerializedName("ItemTypeName")
-    val itemTypeName: String,
+    val itemTypeName: String?,
     
     @SerializedName("isRashi")
     val isRashi: Int,
     
     @SerializedName("kodBinyan")
-    val kodBinyan: Int
-) 
+    val kodBinyan: Int,
+    
+    @SerializedName("IndexName")
+    val indexName: String? = null
+) {
+    /**
+     * Check if this HebrewWord has valid content for display
+     * @return true if the word has at least title or menukad values
+     */
+    fun hasValidContent(): Boolean {
+        return !title.isNullOrBlank() || 
+               !menukad.isNullOrBlank() || 
+               !menukadWithoutNikud.isNullOrBlank() || 
+               !ktivMale.isNullOrBlank()
+    }
+} 

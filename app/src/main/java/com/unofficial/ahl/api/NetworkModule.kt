@@ -137,7 +137,6 @@ object NetworkModule {
         val gson = provideGson()
         val okHttpClient = provideOkHttpClient()
         val retrofit = provideRetrofit(gson, okHttpClient)
-        val htmlRetrofit = provideHtmlRetrofit(okHttpClient)
         return retrofit.create(AhlApi::class.java)
     }
 } 

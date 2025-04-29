@@ -53,13 +53,30 @@ class HebrewWordsRepository(context: Context) {
                 
                 if (cachedResult != null) {
                     // Convert the cached JSON back to a list of HebrewWord objects
-                    return@withContext ApiResult.Success(parseJsonToHebrewWords(cachedResult.apiResponse))
+                    val cachedWords = parseJsonToHebrewWords(cachedResult.apiResponse)
+                    val validWords = filterValidWords(cachedWords)
+                    
+                    if (validWords.isNotEmpty()) {
+                        return@withContext ApiResult.Success(validWords)
+                    }
                 }
             }
             
             // If cache miss or force refresh, try the API
             try {
                 val apiResult = api.searchWords(normalizedQuery)
+                
+                // Filter out invalid entries
+                val validWords = filterValidWords(apiResult)
+                
+                // Check if we have any valid results
+                if (validWords.isEmpty() && apiResult.isNotEmpty()) {
+                    // We have results but none are valid
+                    return@withContext ApiResult.Error(
+                        exception = InvalidDataException("API returned invalid data format"),
+                        message = "Invalid data format returned from API"
+                    )
+                }
                 
                 // If successful, cache the result
                 if (apiResult.isNotEmpty()) {
@@ -72,7 +89,7 @@ class HebrewWordsRepository(context: Context) {
                     searchCacheDao.insertCache(cacheEntry)
                 }
                 
-                ApiResult.Success(apiResult)
+                ApiResult.Success(validWords)
             } catch (e: Exception) {
                 // Log the error
                 e.printStackTrace()
@@ -94,7 +111,12 @@ class HebrewWordsRepository(context: Context) {
                 if (forceRefresh) {
                     val lastResortCache = searchCacheDao.getCachedSearch(normalizedQuery)
                     if (lastResortCache != null) {
-                        return@withContext ApiResult.Success(parseJsonToHebrewWords(lastResortCache.apiResponse))
+                        val cachedWords = parseJsonToHebrewWords(lastResortCache.apiResponse)
+                        val validWords = filterValidWords(cachedWords)
+                        
+                        if (validWords.isNotEmpty()) {
+                            return@withContext ApiResult.Success(validWords)
+                        }
                     }
                 }
                 
@@ -108,9 +130,17 @@ class HebrewWordsRepository(context: Context) {
      * @param keyword The keyword from the HebrewWord object
      * @return ApiResult with either the HTML content or error details
      */
-    suspend fun fetchWordDetails(keyword: String): ApiResult<String> {
+    suspend fun fetchWordDetails(keyword: String?): ApiResult<String> {
         return withContext(Dispatchers.IO) {
             try {
+                // Validate the keyword is not null
+                if (keyword.isNullOrBlank()) {
+                    return@withContext ApiResult.Error(
+                        exception = InvalidDataException("Keyword is null or blank"),
+                        message = "No valid keyword to fetch details"
+                    )
+                }
+                
                 // Construct the URL for the word details page
                 val detailsUrl = "https://hebrew-academy.org.il/keyword/$keyword"
                 
@@ -120,6 +150,13 @@ class HebrewWordsRepository(context: Context) {
                 
                 // Extract the relevant content using the HTML parser
                 val extractedContent = HtmlParser.extractContent(htmlContent)
+                
+                if (extractedContent.isBlank()) {
+                    return@withContext ApiResult.Error(
+                        exception = InvalidDataException("No content found"),
+                        message = "No relevant content found on the details page"
+                    )
+                }
                 
                 ApiResult.Success(extractedContent)
             } catch (e: Exception) {
@@ -143,7 +180,15 @@ class HebrewWordsRepository(context: Context) {
             }
         }
     }
-
+    
+    /**
+     * Filter out invalid word entries
+     * @param words List of words to filter
+     * @return List of valid words only
+     */
+    private fun filterValidWords(words: List<HebrewWord>): List<HebrewWord> {
+        return words.filter { it.hasValidContent() }
+    }
     
     /**
      * Normalize the search term (trim, lowercase, etc.)
@@ -164,4 +209,9 @@ class HebrewWordsRepository(context: Context) {
             emptyList()
         }
     }
+    
+    /**
+     * Custom exception for invalid data format
+     */
+    class InvalidDataException(message: String) : Exception(message)
 } 

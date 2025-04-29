@@ -11,4 +11,7 @@
     <string name="api_error">API Error</string>
     <string name="dismiss">Dismiss</string>
     <string name="text_copied">Text copied to clipboard</string>
+    <string name="no_title_available">No title available</string>
+    <string name="invalid_data_format">Invalid response from API</string>
+    <string name="no_details_available">No detailed information available</string>
 </resources> 

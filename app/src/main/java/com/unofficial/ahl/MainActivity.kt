@@ -80,6 +80,9 @@ fun AhlApp(viewModel: MainViewModel) {
     val scaffoldState = rememberScaffoldState()
     val coroutineScope = rememberCoroutineScope()
 
+    // State to track if keyboard should be shown after scroll stops
+    var showKeyboardAfterScroll by remember { mutableStateOf(false) }
+
     // Pre-load string resources
     val apiErrorText = stringResource(R.string.api_error)
     val textCopiedMessage = stringResource(R.string.text_copied)
@@ -181,6 +184,9 @@ fun AhlApp(viewModel: MainViewModel) {
                             onRefresh = {
                                 viewModel.searchWords(forceRefresh = true)
                             },
+                            onClearClick = {
+                                showKeyboardAfterScroll = true
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                         
@@ -216,6 +222,13 @@ fun AhlApp(viewModel: MainViewModel) {
                                                 duration = SnackbarDuration.Short
                                             )
                                         }
+                                    },
+                                    showKeyboardAfterScroll = showKeyboardAfterScroll,
+                                    onScrollStopped = {
+                                        if (showKeyboardAfterScroll) {
+                                            keyboardController?.show()
+                                            showKeyboardAfterScroll = false
+                                        }
                                     }
                                 )
                             }
@@ -241,6 +254,7 @@ fun SearchBar(
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
+    onClearClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
 
@@ -258,6 +272,7 @@ fun SearchBar(
             Spacer(modifier = Modifier.width(8.dp))
 
             val focusRequester = remember { FocusRequester() }
+            val keyboardController = LocalSoftwareKeyboardController.current
 
             OutlinedTextField(
                 value = query,
@@ -274,6 +289,24 @@ fun SearchBar(
                     textAlign = TextAlign.Right,
                     textDirection = TextDirection.Rtl
                 ),
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                onQueryChange("")
+                                focusRequester.requestFocus()
+                                keyboardController?.show()
+                                onClearClick()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = stringResource(R.string.clear_search),
+                                tint = Color.Red
+                            )
+                        }
+                    }
+                },
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester)
@@ -309,22 +342,37 @@ fun WordsList(
     words: List<HebrewWord>,
     onWordClick: (HebrewWord) -> Unit,
     onCopyText: (String) -> Unit,
+    showKeyboardAfterScroll: Boolean,
+    onScrollStopped: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Get keyboard controller to hide keyboard on scroll
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
-
+    val isScrolling = listState.isScrollInProgress
+    
     val now = System.currentTimeMillis()
 
     // Variable to track if we've hidden the keyboard
     var keyboardLastHid by remember { mutableStateOf(now) }
+    
+    // Variable to track previous scroll state
+    var wasScrollingPreviously by remember { mutableStateOf(false) }
 
     // Check if list is scrolling to hide keyboard (do not hide too often)
-    if (listState.isScrollInProgress && now - keyboardLastHid > 500) {
+    if (isScrolling && now - keyboardLastHid > 500) {
         // This will run every time the composition recomposes while scrolling
         keyboardController?.hide()
         keyboardLastHid = System.currentTimeMillis()
+    }
+    
+    // Detect when scrolling stops and call the callback
+    LaunchedEffect(isScrolling) {
+        if (wasScrollingPreviously && !isScrolling) {
+            // Scrolling just stopped
+            onScrollStopped()
+        }
+        wasScrollingPreviously = isScrolling
     }
     
     LazyColumn(

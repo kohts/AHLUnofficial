@@ -2,6 +2,7 @@ package com.unofficial.ahl.ui
 
 import android.text.Html
 import android.widget.TextView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,6 +34,10 @@ fun DetailScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Handle system back button/gesture
+    BackHandler {
+        onBackClick()
+    }
 
     Scaffold(
         topBar = {

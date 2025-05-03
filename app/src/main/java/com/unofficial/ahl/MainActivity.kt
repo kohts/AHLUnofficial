@@ -26,8 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextDirection
 import com.unofficial.ahl.model.HebrewWord
+import com.unofficial.ahl.model.SearchHistory
 import com.unofficial.ahl.ui.DetailScreen
 import com.unofficial.ahl.ui.screens.MainScreenLayout
+import com.unofficial.ahl.ui.components.SearchHistoryList
 import com.unofficial.ahl.viewmodel.MainViewModel
 import com.unofficial.ahl.viewmodel.ErrorViewModel
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,6 +46,7 @@ import android.widget.Toast
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -66,6 +69,7 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     val selectedWord by viewModel.selectedWord.collectAsState()
     val wordDetailsState by viewModel.wordDetailsState.collectAsState()
     val invalidDataDetected by viewModel.invalidDataDetected.collectAsState()
+    val searchHistory by viewModel.searchHistory.collectAsState(initial = emptyList())
     val keyboardController = LocalSoftwareKeyboardController.current
     val scaffoldState = rememberScaffoldState()
     val coroutineScope = rememberCoroutineScope()
@@ -128,7 +132,7 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                         .padding(bottom = 16.dp)
                 )
 
-                // Search bar
+                // Search bar with history
                 SearchBar(
                     query = searchQuery,
                     onQueryChange = { viewModel.updateSearchQuery(it) },
@@ -140,6 +144,13 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                     },
                     onClearClick = {
                         showKeyboardAfterScroll = true
+                    },
+                    searchHistory = searchHistory,
+                    onHistoryItemClick = { historyItem ->
+                        viewModel.searchWithHistoryItem(historyItem)
+                    },
+                    onClearHistory = {
+                        viewModel.clearSearchHistory()
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -211,9 +222,14 @@ fun SearchBar(
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
     onClearClick: () -> Unit,
+    searchHistory: List<SearchHistory>,
+    onHistoryItemClick: (SearchHistory) -> Unit,
+    onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-
+    // State to track if search field is focused
+    var isSearchFocused by remember { mutableStateOf(false) }
+    
     Column(modifier = modifier) {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -239,7 +255,10 @@ fun SearchBar(
                     imeAction = ImeAction.Search
                 ),
                 keyboardActions = KeyboardActions(
-                    onSearch = { onSearch() }
+                    onSearch = { 
+                        onSearch()
+                        isSearchFocused = false 
+                    }
                 ),
                 textStyle = MaterialTheme.typography.body1.copy(
                     textAlign = TextAlign.Right,
@@ -266,6 +285,9 @@ fun SearchBar(
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester)
+                    .onFocusChanged { focusState ->
+                        isSearchFocused = focusState.isFocused
+                    }
             )
 
             LaunchedEffect(Unit) {
@@ -288,6 +310,19 @@ fun SearchBar(
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(stringResource(R.string.refresh_from_api))
             }
+        }
+        
+        // Show search history if the search field is focused and there's history
+        if (isSearchFocused && searchHistory.isNotEmpty()) {
+            SearchHistoryList(
+                searchHistory = searchHistory,
+                onHistoryItemClick = { 
+                    onHistoryItemClick(it)
+                    isSearchFocused = false // Hide history after selection
+                },
+                onClearHistory = onClearHistory,
+                onDismiss = { isSearchFocused = false }
+            )
         }
     }
 }

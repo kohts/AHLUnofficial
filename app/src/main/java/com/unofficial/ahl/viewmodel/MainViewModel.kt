@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.unofficial.ahl.model.HebrewWord
+import com.unofficial.ahl.model.SearchHistory
 import com.unofficial.ahl.repository.HebrewWordsRepository
 import com.unofficial.ahl.repository.HebrewWordsRepository.ApiResult
 import com.unofficial.ahl.data.PreferencesManager
@@ -28,6 +29,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Search query
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    
+    // Search history
+    val searchHistory = repository.getSearchHistory()
+    
+    // Flag to show/hide search history
+    private val _showSearchHistory = MutableStateFlow(false)
+    val showSearchHistory: StateFlow<Boolean> = _showSearchHistory.asStateFlow()
     
     // API error tracking
     private val _apiError = MutableStateFlow<ApiError?>(null)
@@ -114,10 +122,71 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         statusCode = result.statusCode
                     )
                     
-                    _uiState.value = UiState.Error("Failed to load data. Using cached results if available.")
+                    // Try again but explicitly use cache only
+                    tryFallbackToCache(query)
                 }
             }
         }
+    }
+    
+    /**
+     * Try to fetch results from cache as a fallback
+     */
+    private fun tryFallbackToCache(query: String) {
+        viewModelScope.launch {
+            try {
+                // This is a more explicit way to try to get data from cache only
+                val cachedResult = repository.searchWords(query, forceRefresh = false)
+                
+                when (cachedResult) {
+                    is ApiResult.Success -> {
+                        val words = cachedResult.data
+                        if (words.isNotEmpty()) {
+                            _uiState.value = UiState.Success(words)
+                            return@launch
+                        }
+                    }
+                    else -> { /* Cache fallback also failed */ }
+                }
+                
+                // If we get here, even the cache fallback failed
+                _uiState.value = UiState.Error("Failed to load data. No cached results available.")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Failed to load data. No cached results available.")
+            }
+        }
+    }
+    
+    /**
+     * Set visibility of search history
+     * @param show Whether to show search history
+     */
+    fun setShowSearchHistory(show: Boolean) {
+        _showSearchHistory.value = show
+    }
+    
+    /**
+     * Clear all search history
+     */
+    fun clearSearchHistory() {
+        viewModelScope.launch {
+            repository.clearSearchHistory()
+        }
+    }
+    
+    /**
+     * Use a history item to perform a search
+     * @param historyItem The search history item to use
+     */
+    fun searchWithHistoryItem(historyItem: SearchHistory) {
+        // Update the search query
+        _searchQuery.value = historyItem.searchTerm
+        
+        // Perform the search
+        searchWords(forceRefresh = false)
+        
+        // Hide the search history
+        _showSearchHistory.value = false
     }
     
     /**

@@ -8,6 +8,7 @@ import com.unofficial.ahl.api.NetworkModule
 import com.unofficial.ahl.database.AppDatabase
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.model.SearchCache
+import com.unofficial.ahl.model.SearchHistory
 import com.unofficial.ahl.util.HtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,6 +23,7 @@ import java.io.IOException
 class HebrewWordsRepository(context: Context) {
     private val api: AhlApi = NetworkModule.provideAhlApi()
     private val searchCacheDao = AppDatabase.getDatabase(context).searchCacheDao()
+    private val searchHistoryDao = AppDatabase.getDatabase(context).searchHistoryDao()
     private val gson = Gson()
     
     /**
@@ -37,6 +39,47 @@ class HebrewWordsRepository(context: Context) {
     }
     
     /**
+     * Add an entry to the search history
+     * @param searchTerm The search term to log in history
+     */
+    private suspend fun addToSearchHistory(searchTerm: String) {
+        // Only add if the term doesn't already exist or if it's not empty
+        if (searchTerm.isNotBlank()) {
+            val exists = searchHistoryDao.searchTermExists(searchTerm)
+            if (!exists) {
+                // Add to search history
+                val searchHistory = SearchHistory(
+                    searchTerm = searchTerm,
+                    timestamp = Date()
+                )
+                searchHistoryDao.insertSearchHistory(searchHistory)
+                
+                // Clean up old entries to keep only the most recent ones
+                searchHistoryDao.deleteOldSearches(10)
+            } else {
+                // Just update the timestamp of the existing entry by removing and re-adding
+                val searchHistory = SearchHistory(
+                    searchTerm = searchTerm,
+                    timestamp = Date()
+                )
+                searchHistoryDao.insertSearchHistory(searchHistory)
+            }
+        }
+    }
+    
+    /**
+     * Get the search history
+     * @param limit The maximum number of entries to return
+     * @return Flow of search history entries, ordered by timestamp (newest first)
+     */
+    fun getSearchHistory(limit: Int = 10) = searchHistoryDao.getRecentSearches(limit)
+    
+    /**
+     * Clear the search history
+     */
+    suspend fun clearSearchHistory() = searchHistoryDao.clearSearchHistory()
+    
+    /**
      * Search for Hebrew words matching the query
      * @param query The search query
      * @param forceRefresh Whether to force a fresh API request
@@ -46,23 +89,25 @@ class HebrewWordsRepository(context: Context) {
         return withContext(Dispatchers.IO) {
             // Normalize the search term
             val normalizedQuery = normalizeSearchTerm(query)
+            var apiError: Exception? = null
+            var errorMessage: String? = null
+            var statusCode: Int? = null
             
-            if (!forceRefresh) {
-                // Try to get from cache first
-                val cachedResult = searchCacheDao.getCachedSearch(normalizedQuery)
-                
-                if (cachedResult != null) {
-                    // Convert the cached JSON back to a list of HebrewWord objects
-                    val cachedWords = parseJsonToHebrewWords(cachedResult.apiResponse)
-                    val validWords = filterValidWords(cachedWords)
-                    
-                    if (validWords.isNotEmpty()) {
-                        return@withContext ApiResult.Success(validWords)
-                    }
-                }
+            // Always check cache first, regardless of forceRefresh, to have a fallback
+            val cachedResult = searchCacheDao.getCachedSearch(normalizedQuery)
+            val cachedWords = cachedResult?.let { 
+                val words = parseJsonToHebrewWords(it.apiResponse)
+                filterValidWords(words)
+            } ?: emptyList()
+            
+            // If we have valid cache data and not forcing refresh, return it immediately
+            if (!forceRefresh && cachedWords.isNotEmpty()) {
+                // Add to search history when retrieved from cache
+                addToSearchHistory(normalizedQuery)
+                return@withContext ApiResult.Success(cachedWords)
             }
             
-            // If cache miss or force refresh, try the API
+            // If forcing refresh or no valid cache, try the API
             try {
                 val apiResult = api.searchWords(normalizedQuery)
                 
@@ -72,9 +117,18 @@ class HebrewWordsRepository(context: Context) {
                 // Check if we have any valid results
                 if (validWords.isEmpty() && apiResult.isNotEmpty()) {
                     // We have results but none are valid
+                    errorMessage = "Invalid data format returned from API"
+                    apiError = InvalidDataException(errorMessage)
+                    
+                    // If we have cached results, use them instead
+                    if (cachedWords.isNotEmpty()) {
+                        addToSearchHistory(normalizedQuery)
+                        return@withContext ApiResult.Success(cachedWords)
+                    }
+                    
                     return@withContext ApiResult.Error(
-                        exception = InvalidDataException("API returned invalid data format"),
-                        message = "Invalid data format returned from API"
+                        exception = apiError,
+                        message = errorMessage
                     )
                 }
                 
@@ -87,6 +141,9 @@ class HebrewWordsRepository(context: Context) {
                         timestamp = Date()
                     )
                     searchCacheDao.insertCache(cacheEntry)
+                    
+                    // Add to search history when API call is successful
+                    addToSearchHistory(normalizedQuery)
                 }
                 
                 ApiResult.Success(validWords)
@@ -95,32 +152,28 @@ class HebrewWordsRepository(context: Context) {
                 e.printStackTrace()
                 
                 // Extract HTTP status code if available
-                val statusCode = when (e) {
+                statusCode = when (e) {
                     is HttpException -> e.code()
                     else -> null
                 }
                 
                 // Generate a meaningful error message
-                val errorMessage = when (e) {
+                errorMessage = when (e) {
                     is HttpException -> "Server error: ${e.message()} (${e.code()})"
                     is IOException -> "Network error: ${e.message}"
                     else -> "Unknown error: ${e.message}"
                 }
                 
-                // Try one last time to get from cache even if forceRefresh was true
-                if (forceRefresh) {
-                    val lastResortCache = searchCacheDao.getCachedSearch(normalizedQuery)
-                    if (lastResortCache != null) {
-                        val cachedWords = parseJsonToHebrewWords(lastResortCache.apiResponse)
-                        val validWords = filterValidWords(cachedWords)
-                        
-                        if (validWords.isNotEmpty()) {
-                            return@withContext ApiResult.Success(validWords)
-                        }
-                    }
+                apiError = e
+                
+                // Use cached data if available
+                if (cachedWords.isNotEmpty()) {
+                    // Add to search history when using cached fallback
+                    addToSearchHistory(normalizedQuery)
+                    return@withContext ApiResult.Success(cachedWords)
                 }
                 
-                ApiResult.Error(e, errorMessage, statusCode)
+                ApiResult.Error(apiError, errorMessage, statusCode)
             }
         }
     }

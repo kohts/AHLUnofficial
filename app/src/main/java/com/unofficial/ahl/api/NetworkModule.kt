@@ -11,6 +11,26 @@ import retrofit2.Converter
 import java.lang.reflect.Type
 import java.util.concurrent.TimeUnit
 import okio.Buffer
+import okhttp3.Interceptor
+import okhttp3.Request
+import okhttp3.Response
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Data class to store details of HTTP exchanges including errors
+ */
+data class DetailedSession(
+    val url: String?,
+    val method: String?,
+    val requestHeaders: Map<String, String>?,
+    val requestBody: String?,
+    val responseCode: Int?,
+    val responseHeaders: Map<String, String>?,
+    val responseBody: String?,
+    val errorMessage: String?
+)
 
 /**
  * Network module for setting up API connection
@@ -67,6 +87,10 @@ object NetworkModule {
     private const val BASE_URL = "https://kalanit.hebrew-academy.org.il/api/"
     private const val HEBREW_ACADEMY_URL = "https://hebrew-academy.org.il/"
     
+    // StateFlow to store the most recent error session
+    private val _lastErrorSession = MutableStateFlow<DetailedSession?>(null)
+    val lastErrorSession: StateFlow<DetailedSession?> = _lastErrorSession.asStateFlow()
+    
     /**
      * Creates and returns a configured Gson instance
      */
@@ -74,6 +98,57 @@ object NetworkModule {
         return GsonBuilder()
             .setLenient()
             .create()
+    }
+    
+    /**
+     * HTTP interceptor to capture request and response details
+     */
+    private class HttpCaptureInterceptor : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val requestBody = request.body?.let {
+                val buffer = Buffer()
+                it.writeTo(buffer)
+                buffer.readUtf8()
+            }
+            
+            val requestHeaders = request.headers.toMultimap().mapValues { it.value.joinToString(", ") }
+            
+            try {
+                val response = chain.proceed(request)
+                val responseBody = response.peekBody(Long.MAX_VALUE).string()
+                val responseHeaders = response.headers.toMultimap().mapValues { it.value.joinToString(", ") }
+                
+                if (!response.isSuccessful) {
+                    val session = DetailedSession(
+                        url = request.url.toString(),
+                        method = request.method,
+                        requestHeaders = requestHeaders,
+                        requestBody = requestBody,
+                        responseCode = response.code,
+                        responseHeaders = responseHeaders,
+                        responseBody = responseBody,
+                        errorMessage = "HTTP ${response.code} ${response.message}"
+                    )
+                    _lastErrorSession.value = session
+                }
+                
+                return response
+            } catch (e: Exception) {
+                val session = DetailedSession(
+                    url = request.url.toString(),
+                    method = request.method,
+                    requestHeaders = requestHeaders,
+                    requestBody = requestBody,
+                    responseCode = -1,
+                    responseHeaders = emptyMap(),
+                    responseBody = null,
+                    errorMessage = e.message ?: "Unknown error"
+                )
+                _lastErrorSession.value = session
+                throw e
+            }
+        }
     }
     
     /**
@@ -86,6 +161,7 @@ object NetworkModule {
         
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
+            .addInterceptor(HttpCaptureInterceptor())
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -138,5 +214,21 @@ object NetworkModule {
         val okHttpClient = provideOkHttpClient()
         val retrofit = provideRetrofit(gson, okHttpClient)
         return retrofit.create(AhlApi::class.java)
+    }
+    
+    /**
+     * Creates and returns the HTML service interface
+     */
+    fun provideHtmlApi(): HtmlApi {
+        val okHttpClient = provideOkHttpClient()
+        val retrofit = provideHtmlRetrofit(okHttpClient)
+        return retrofit.create(HtmlApi::class.java)
+    }
+    
+    /**
+     * Clears the last error session
+     */
+    fun clearLastErrorSession() {
+        _lastErrorSession.value = null
     }
 } 

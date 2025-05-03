@@ -1,7 +1,6 @@
 package com.unofficial.ahl
 
 import android.os.Bundle
-import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -12,7 +11,6 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,23 +24,16 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.text.style.TextDirection
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.ui.DetailScreen
+import com.unofficial.ahl.ui.screens.MainScreenLayout
 import com.unofficial.ahl.viewmodel.MainViewModel
+import com.unofficial.ahl.viewmodel.ErrorViewModel
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,23 +44,22 @@ import android.widget.Toast
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalTextToolbar
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private val errorViewModel: ErrorViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            AhlApp(viewModel)
+            AhlApp(viewModel, errorViewModel)
         }
     }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun AhlApp(viewModel: MainViewModel) {
+fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val apiError by viewModel.apiError.collectAsState()
@@ -88,167 +78,124 @@ fun AhlApp(viewModel: MainViewModel) {
     val textCopiedMessage = stringResource(R.string.text_copied)
     val invalidDataMessage = stringResource(R.string.invalid_data_format)
 
-    // Control visibility of the error banner
-    var showErrorBanner by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
-
-    // Update error banner state when API error changes
+    // Update error message in the view model when API error changes
     LaunchedEffect(apiError) {
         apiError?.let { error ->
-            errorMessage = buildString {
+            val errorMsg = buildString {
                 append(apiErrorTitle)
                 error.statusCode?.let { code -> append(" ($code)") }
                 append(": ${error.message}")
             }
-            showErrorBanner = true
-
-            // Auto-dismiss after a delay
-            delay(5000)
-            showErrorBanner = false
-            viewModel.clearApiError()
+            // The error details will be captured by the NetworkModule interceptor
+            // Just need to set the message for display
+            errorViewModel.setErrorMessage(errorMsg)
         }
     }
 
-    // Show invalid data error in the top error banner
+    // Show invalid data error in the error banner
     LaunchedEffect(invalidDataDetected) {
         if (invalidDataDetected) {
-            errorMessage = invalidDataMessage
-            showErrorBanner = true
-
-            // Auto-dismiss after a delay
-            delay(5000)
-            showErrorBanner = false
+            errorViewModel.setErrorMessage(invalidDataMessage)
+            // Auto-dismiss after a delay handled by ErrorViewModel
             viewModel.clearInvalidDataFlag()
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            scaffoldState = scaffoldState,
-            modifier = Modifier.fillMaxSize(),
-        ) { paddingValues ->
-            Surface(
+    // Use our new MainScreenLayout
+    MainScreenLayout(errorViewModel = errorViewModel) {
+        // Content based on whether a word is selected or not
+        if (selectedWord != null) {
+            DetailScreen(
+                selectedWord = selectedWord,
+                detailsState = wordDetailsState,
+                onBackClick = { viewModel.clearWordSelection() }
+            )
+        } else {
+            // Main content
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                color = MaterialTheme.colors.background
+                    .padding(16.dp)
             ) {
+                // App title
+                Text(
+                    text = stringResource(R.string.app_name),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                )
 
-                Column(
-                    modifier = Modifier.fillMaxSize()
-                ) {
+                // Search bar
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = { viewModel.updateSearchQuery(it) },
+                    onSearch = {
+                        viewModel.searchWords()
+                    },
+                    onRefresh = {
+                        viewModel.searchWords(forceRefresh = true)
+                    },
+                    onClearClick = {
+                        showKeyboardAfterScroll = true
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                    // Error banner at the top of the screen (visible above keyboard)
-                    AnimatedVisibility(
-                        visible = showErrorBanner,
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        ErrorBanner(
-                            message = errorMessage,
-                            onDismiss = {
-                                showErrorBanner = false
-                                viewModel.clearApiError()
-                                viewModel.clearInvalidDataFlag()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Content based on state
+                when (uiState) {
+                    is MainViewModel.UiState.Initial -> {
+                        // Initial state, show nothing or instructions
+                    }
+
+                    is MainViewModel.UiState.Loading -> {
+                        LoadingIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+
+                    is MainViewModel.UiState.Success -> {
+                        val words = (uiState as MainViewModel.UiState.Success).words
+
+                        // Hide keyboard only if results list is long
+                        LaunchedEffect(words) {
+                            if (words.size > 3) {
+                                keyboardController?.hide()
+                            }
+                        }
+
+                        WordsList(
+                            words = words,
+                            onWordClick = { word ->
+                                viewModel.selectWord(word)
+                            },
+                            onCopyText = { text ->
+                                coroutineScope.launch {
+                                    scaffoldState.snackbarHostState.showSnackbar(
+                                        message = textCopiedMessage,
+                                        duration = SnackbarDuration.Short
+                                    )
+                                }
+                            },
+                            showKeyboardAfterScroll = showKeyboardAfterScroll,
+                            onScrollStopped = {
+                                if (showKeyboardAfterScroll) {
+                                    keyboardController?.show()
+                                    showKeyboardAfterScroll = false
+                                }
                             }
                         )
                     }
-                    // Show detail screen if a word is selected, otherwise show main screen
-                    if (selectedWord != null) {
-                        DetailScreen(
-                            selectedWord = selectedWord,
-                            detailsState = wordDetailsState,
-                            onBackClick = { viewModel.clearWordSelection() }
-                        )
-                    } else {
-                        // Main content
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp)
-                        ) {
-                            // App title
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 16.dp)
-                            )
 
-                            // Search bar
-                            SearchBar(
-                                query = searchQuery,
-                                onQueryChange = { viewModel.updateSearchQuery(it) },
-                                onSearch = {
-                                    viewModel.searchWords()
-                                },
-                                onRefresh = {
-                                    viewModel.searchWords(forceRefresh = true)
-                                },
-                                onClearClick = {
-                                    showKeyboardAfterScroll = true
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                    is MainViewModel.UiState.NoResults -> {
+                        EmptyState(message = stringResource(R.string.no_results))
+                    }
 
-                            Spacer(modifier = Modifier.height(16.dp))
-
-                            // Content based on state
-                            when (uiState) {
-                                is MainViewModel.UiState.Initial -> {
-                                    // Initial state, show nothing or instructions
-                                }
-
-                                is MainViewModel.UiState.Loading -> {
-                                    LoadingIndicator(modifier = Modifier.fillMaxWidth())
-                                }
-
-                                is MainViewModel.UiState.Success -> {
-                                    val words = (uiState as MainViewModel.UiState.Success).words
-
-                                    // Hide keyboard only if results list is long
-                                    LaunchedEffect(words) {
-                                        if (words.size > 3) {
-                                            keyboardController?.hide()
-                                        }
-                                    }
-
-                                    WordsList(
-                                        words = words,
-                                        onWordClick = { word ->
-                                            viewModel.selectWord(word)
-                                        },
-                                        onCopyText = { text ->
-                                            coroutineScope.launch {
-                                                scaffoldState.snackbarHostState.showSnackbar(
-                                                    message = textCopiedMessage,
-                                                    duration = SnackbarDuration.Short
-                                                )
-                                            }
-                                        },
-                                        showKeyboardAfterScroll = showKeyboardAfterScroll,
-                                        onScrollStopped = {
-                                            if (showKeyboardAfterScroll) {
-                                                keyboardController?.show()
-                                                showKeyboardAfterScroll = false
-                                            }
-                                        }
-                                    )
-                                }
-
-                                is MainViewModel.UiState.NoResults -> {
-                                    EmptyState(message = stringResource(R.string.no_results))
-                                }
-
-                                is MainViewModel.UiState.Error -> {
-                                    val message = (uiState as MainViewModel.UiState.Error).message
-                                    ErrorState(message = message)
-                                }
-                            }
-                        }
+                    is MainViewModel.UiState.Error -> {
+                        val message = (uiState as MainViewModel.UiState.Error).message
+                        ErrorState(message = message)
                     }
                 }
             }
@@ -537,51 +484,6 @@ fun ErrorState(message: String, modifier: Modifier = Modifier) {
                 textAlign = TextAlign.Center,
                 fontSize = 12.sp
             )
-        }
-    }
-}
-
-@Composable
-fun ErrorBanner(
-    message: String,
-    onDismiss: () -> Unit
-) {
-    Surface(
-        color = MaterialTheme.colors.error,
-        elevation = 4.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = null,
-                tint = Color.White
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = message,
-                color = Color.White,
-                modifier = Modifier.weight(1f)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(R.string.dismiss),
-                    tint = Color.White
-                )
-            }
         }
     }
 }

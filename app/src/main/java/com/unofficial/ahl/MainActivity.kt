@@ -58,7 +58,7 @@ import androidx.compose.ui.platform.LocalTextToolbar
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -84,63 +84,60 @@ fun AhlApp(viewModel: MainViewModel) {
     var showKeyboardAfterScroll by remember { mutableStateOf(false) }
 
     // Pre-load string resources
-    val apiErrorText = stringResource(R.string.api_error)
+    val apiErrorTitle = stringResource(R.string.api_error)
     val textCopiedMessage = stringResource(R.string.text_copied)
     val invalidDataMessage = stringResource(R.string.invalid_data_format)
 
     // Control visibility of the error banner
     var showErrorBanner by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
-    
+
     // Update error banner state when API error changes
     LaunchedEffect(apiError) {
         apiError?.let { error ->
             errorMessage = buildString {
-                append(apiErrorText)
+                append(apiErrorTitle)
                 error.statusCode?.let { code -> append(" ($code)") }
                 append(": ${error.message}")
             }
             showErrorBanner = true
-            
+
             // Auto-dismiss after a delay
             delay(5000)
             showErrorBanner = false
             viewModel.clearApiError()
         }
     }
-    
+
     // Show invalid data error in the top error banner
     LaunchedEffect(invalidDataDetected) {
         if (invalidDataDetected) {
             errorMessage = invalidDataMessage
             showErrorBanner = true
-            
+
             // Auto-dismiss after a delay
             delay(5000)
             showErrorBanner = false
             viewModel.clearInvalidDataFlag()
         }
     }
-    
-    Scaffold(
-        scaffoldState = scaffoldState,
-        modifier = Modifier.fillMaxSize(),
-    ) { paddingValues ->
-        Surface(
-            modifier = Modifier.fillMaxSize().padding(paddingValues),
-            color = MaterialTheme.colors.background
-        ) {
-            // Show detail screen if a word is selected, otherwise show main screen
-            if (selectedWord != null) {
-                DetailScreen(
-                    selectedWord = selectedWord,
-                    detailsState = wordDetailsState,
-                    onBackClick = { viewModel.clearWordSelection() }
-                )
-            } else {
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            scaffoldState = scaffoldState,
+            modifier = Modifier.fillMaxSize(),
+        ) { paddingValues ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                color = MaterialTheme.colors.background
+            ) {
+
                 Column(
                     modifier = Modifier.fillMaxSize()
                 ) {
+
                     // Error banner at the top of the screen (visible above keyboard)
                     AnimatedVisibility(
                         visible = showErrorBanner,
@@ -156,88 +153,100 @@ fun AhlApp(viewModel: MainViewModel) {
                             }
                         )
                     }
-                    
-                    // Main content
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp)
-                    ) {
-                        // App title
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
+                    // Show detail screen if a word is selected, otherwise show main screen
+                    if (selectedWord != null) {
+                        DetailScreen(
+                            selectedWord = selectedWord,
+                            detailsState = wordDetailsState,
+                            onBackClick = { viewModel.clearWordSelection() }
+                        )
+                    } else {
+                        // Main content
+                        Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 16.dp)
-                        )
+                                .fillMaxSize()
+                                .padding(16.dp)
+                        ) {
+                            // App title
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                            )
 
-                        // Search bar
-                        SearchBar(
-                            query = searchQuery,
-                            onQueryChange = { viewModel.updateSearchQuery(it) },
-                            onSearch = { 
-                                viewModel.searchWords()
-                            },
-                            onRefresh = {
-                                viewModel.searchWords(forceRefresh = true)
-                            },
-                            onClearClick = {
-                                showKeyboardAfterScroll = true
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Content based on state
-                        when (uiState) {
-                            is MainViewModel.UiState.Initial -> {
-                                // Initial state, show nothing or instructions
-                            }
-                            is MainViewModel.UiState.Loading -> {
-                                LoadingIndicator(modifier = Modifier.fillMaxWidth())
-                            }
-                            is MainViewModel.UiState.Success -> {
-                                val words = (uiState as MainViewModel.UiState.Success).words
-                                
-                                // Hide keyboard only if results list is long
-                                LaunchedEffect(words) {
-                                    if (words.size > 3) {
-                                        keyboardController?.hide()
-                                    }
+                            // Search bar
+                            SearchBar(
+                                query = searchQuery,
+                                onQueryChange = { viewModel.updateSearchQuery(it) },
+                                onSearch = {
+                                    viewModel.searchWords()
+                                },
+                                onRefresh = {
+                                    viewModel.searchWords(forceRefresh = true)
+                                },
+                                onClearClick = {
+                                    showKeyboardAfterScroll = true
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Content based on state
+                            when (uiState) {
+                                is MainViewModel.UiState.Initial -> {
+                                    // Initial state, show nothing or instructions
                                 }
-                                
-                                WordsList(
-                                    words = words,
-                                    onWordClick = { word ->
-                                        viewModel.selectWord(word)
-                                    },
-                                    onCopyText = { text ->
-                                        coroutineScope.launch {
-                                            scaffoldState.snackbarHostState.showSnackbar(
-                                                message = textCopiedMessage,
-                                                duration = SnackbarDuration.Short
-                                            )
-                                        }
-                                    },
-                                    showKeyboardAfterScroll = showKeyboardAfterScroll,
-                                    onScrollStopped = {
-                                        if (showKeyboardAfterScroll) {
-                                            keyboardController?.show()
-                                            showKeyboardAfterScroll = false
+
+                                is MainViewModel.UiState.Loading -> {
+                                    LoadingIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+
+                                is MainViewModel.UiState.Success -> {
+                                    val words = (uiState as MainViewModel.UiState.Success).words
+
+                                    // Hide keyboard only if results list is long
+                                    LaunchedEffect(words) {
+                                        if (words.size > 3) {
+                                            keyboardController?.hide()
                                         }
                                     }
-                                )
-                            }
-                            is MainViewModel.UiState.NoResults -> {
-                                EmptyState(message = stringResource(R.string.no_results))
-                            }
-                            is MainViewModel.UiState.Error -> {
-                                val message = (uiState as MainViewModel.UiState.Error).message
-                                ErrorState(message = message)
+
+                                    WordsList(
+                                        words = words,
+                                        onWordClick = { word ->
+                                            viewModel.selectWord(word)
+                                        },
+                                        onCopyText = { text ->
+                                            coroutineScope.launch {
+                                                scaffoldState.snackbarHostState.showSnackbar(
+                                                    message = textCopiedMessage,
+                                                    duration = SnackbarDuration.Short
+                                                )
+                                            }
+                                        },
+                                        showKeyboardAfterScroll = showKeyboardAfterScroll,
+                                        onScrollStopped = {
+                                            if (showKeyboardAfterScroll) {
+                                                keyboardController?.show()
+                                                showKeyboardAfterScroll = false
+                                            }
+                                        }
+                                    )
+                                }
+
+                                is MainViewModel.UiState.NoResults -> {
+                                    EmptyState(message = stringResource(R.string.no_results))
+                                }
+
+                                is MainViewModel.UiState.Error -> {
+                                    val message = (uiState as MainViewModel.UiState.Error).message
+                                    ErrorState(message = message)
+                                }
                             }
                         }
                     }
@@ -268,7 +277,7 @@ fun SearchBar(
                     contentDescription = stringResource(R.string.search_button)
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(8.dp))
 
             val focusRequester = remember { FocusRequester() }
@@ -316,7 +325,7 @@ fun SearchBar(
                 focusRequester.requestFocus()
             }
         }
-        
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -350,12 +359,12 @@ fun WordsList(
     val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val isScrolling = listState.isScrollInProgress
-    
+
     val now = System.currentTimeMillis()
 
     // Variable to track if we've hidden the keyboard
     var keyboardLastHid by remember { mutableStateOf(now) }
-    
+
     // Variable to track previous scroll state
     var wasScrollingPreviously by remember { mutableStateOf(false) }
 
@@ -365,7 +374,7 @@ fun WordsList(
         keyboardController?.hide()
         keyboardLastHid = System.currentTimeMillis()
     }
-    
+
     // Detect when scrolling stops and call the callback
     LaunchedEffect(isScrolling) {
         if (wasScrollingPreviously && !isScrolling) {
@@ -374,7 +383,7 @@ fun WordsList(
         }
         wasScrollingPreviously = isScrolling
     }
-    
+
     LazyColumn(
         modifier = modifier,
         state = listState
@@ -392,20 +401,22 @@ fun WordsList(
 
 @Composable
 fun WordItem(
-    word: HebrewWord, 
+    word: HebrewWord,
     onWordClick: (HebrewWord) -> Unit,
     onCopyText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    
+
     // Format all the content that will be copied when long-pressed
     val copyContent = buildString {
-        word.title?.let { append(it); append("\n") } ?: append(word.menukad ?: word.menukadWithoutNikud ?: "")
+        word.title?.let { append(it); append("\n") } ?: append(
+            word.menukad ?: word.menukadWithoutNikud ?: ""
+        )
         word.definition?.let { append(it); append("\n") }
         word.itemTypeName?.let { append(it) }
     }
-    
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -415,10 +426,11 @@ fun WordItem(
                     onTap = { onWordClick(word) },
                     onLongPress = {
                         // Copy to clipboard
-                        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clipboardManager =
+                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         val clipData = ClipData.newPlainText("hebrew_word", copyContent)
                         clipboardManager.setPrimaryClip(clipData)
-                        
+
                         // Notify through callback
                         onCopyText(copyContent)
                     }
@@ -427,12 +439,12 @@ fun WordItem(
         horizontalAlignment = Alignment.End,
     ) {
         // Title with nikud and without - use fallbacks if title is null
-        val displayTitle = word.title 
+        val displayTitle = word.title
             ?: word.menukad
             ?: word.menukadWithoutNikud
             ?: word.ktivMale
             ?: stringResource(R.string.no_title_available)
-            
+
         Text(
             text = displayTitle,
             fontWeight = FontWeight.Bold,
@@ -442,9 +454,9 @@ fun WordItem(
                 textDirection = TextDirection.Rtl
             ),
         )
-        
+
         Spacer(modifier = Modifier.height(4.dp))
-        
+
         // Definition
         word.definition?.let { definition ->
             Text(
@@ -455,10 +467,10 @@ fun WordItem(
                     textDirection = TextDirection.Rtl
                 ),
             )
-            
+
             Spacer(modifier = Modifier.height(4.dp))
         }
-        
+
         // Item type
         if (!word.itemTypeName.isNullOrBlank()) {
             Text(
@@ -473,7 +485,9 @@ fun WordItem(
 @Composable
 fun LoadingIndicator(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier.fillMaxWidth().padding(top = 16.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp),
         contentAlignment = Alignment.TopCenter
     ) {
         Row(
@@ -547,17 +561,17 @@ fun ErrorBanner(
                 contentDescription = null,
                 tint = Color.White
             )
-            
+
             Spacer(modifier = Modifier.width(12.dp))
-            
+
             Text(
                 text = message,
                 color = Color.White,
                 modifier = Modifier.weight(1f)
             )
-            
+
             Spacer(modifier = Modifier.width(12.dp))
-            
+
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier.size(24.dp)

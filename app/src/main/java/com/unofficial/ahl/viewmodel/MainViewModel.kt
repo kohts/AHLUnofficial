@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.repository.HebrewWordsRepository
 import com.unofficial.ahl.repository.HebrewWordsRepository.ApiResult
+import com.unofficial.ahl.data.PreferencesManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -17,6 +19,7 @@ import java.util.Date
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = HebrewWordsRepository(application.applicationContext)
+    private val preferencesManager = PreferencesManager(application.applicationContext)
     
     // UI state
     private val _uiState = MutableStateFlow<UiState>(UiState.Initial)
@@ -42,18 +45,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedWord = MutableStateFlow<HebrewWord?>(null)
     val selectedWord: StateFlow<HebrewWord?> = _selectedWord.asStateFlow()
     
-    // When ViewModel is created, clean old cache entries
+    // When ViewModel is created, load saved preferences and search results
     init {
         viewModelScope.launch {
+            // Load saved search query
+            val savedQuery = preferencesManager.lastSearchQuery.first()
+            
+            if (savedQuery.isNotEmpty()) {
+                // Update the search query
+                _searchQuery.value = savedQuery
+                
+                // Auto-execute the search to restore last results
+                searchWords(forceRefresh = false)
+            }
         }
     }
     
     /**
-     * Update the search query
+     * Update the search query and save it to preferences
      * @param query The new search query
      */
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
+        
+        // Save the query to preferences if not empty
+        if (query.isNotEmpty()) {
+            viewModelScope.launch {
+                preferencesManager.saveSearchQuery(query)
+            }
+        }
     }
     
     /**
@@ -67,6 +87,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = UiState.Loading
         
         viewModelScope.launch {
+            // Save the query to preferences
+            preferencesManager.saveSearchQuery(query)
+            
             when (val result = repository.searchWords(query, forceRefresh)) {
                 is ApiResult.Success -> {
                     val words = result.data

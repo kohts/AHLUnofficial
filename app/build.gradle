@@ -68,7 +68,11 @@ dependencies {
     
     // Coil for image loading
     implementation 'io.coil-kt:coil-compose:2.4.0'
-    
+
+    // TODO: upgrade once 1.1.5 is fixed - https://issuetracker.google.com/issues/413061399
+    implementation 'androidx.datastore:datastore-core-android:1.1.4'
+    implementation 'androidx.datastore:datastore-preferences:1.1.4'
+
     // Testing
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

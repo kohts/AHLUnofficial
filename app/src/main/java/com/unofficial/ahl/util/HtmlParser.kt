@@ -18,6 +18,7 @@ object HtmlParser {
         startMarker: String = "<div id='post-millon' class='post millon'>",
         endMarker: String = "</div><!-- #content-container -->"
     ): String {
+
         // Get content between markers
         val startIndex = htmlContent.indexOf(startMarker)
         if (startIndex == -1) return ""

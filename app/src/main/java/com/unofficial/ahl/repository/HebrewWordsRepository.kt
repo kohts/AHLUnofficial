@@ -239,6 +239,7 @@ class HebrewWordsRepository(context: Context) {
                 }
                 
                 // Construct the URL for the word details page
+                // keyword changed to דף-מילה (keyword page)
                 val detailsUrl = "https://hebrew-academy.org.il/keyword/$keyword"
                 
                 // Fetch the HTML content

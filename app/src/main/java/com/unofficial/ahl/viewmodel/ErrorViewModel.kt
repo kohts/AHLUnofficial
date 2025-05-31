@@ -42,7 +42,7 @@ class ErrorViewModel : ViewModel() {
         
         // Auto-dismiss after a delay
         viewModelScope.launch {
-            delay(5000)
+            delay(7000)
             _errorMessage.value = null
         }
     }

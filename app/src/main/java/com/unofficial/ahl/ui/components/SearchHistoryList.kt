@@ -22,6 +22,7 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
@@ -76,7 +77,7 @@ fun SearchHistoryList(
             shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)
         ) {
             Column {
-                // Header
+                // Header - RTL layout
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -84,25 +85,29 @@ fun SearchHistoryList(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Cancel button on the left in RTL layout
+                    TextButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel"
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cancel")
+                    }
+                    
+                    Spacer(modifier = Modifier.weight(1f))
+                    
+                    Text(
+                        text = "Search History",
+                        style = MaterialTheme.typography.subtitle1,
+                        textAlign = TextAlign.Right
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.History,
                         contentDescription = null,
                         tint = MaterialTheme.colors.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Search History",
-                        style = MaterialTheme.typography.subtitle1,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = onClearHistory) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Clear History"
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Clear")
-                    }
                 }
                 
                 Divider()
@@ -111,7 +116,7 @@ fun SearchHistoryList(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp) // Show ~3 items at a time (adjust as needed)
+                        .height(480.dp) // Show ~9 items at a time (adjust as needed)
                 ) {
                     items(searchHistory) { historyItem ->
                         SearchHistoryItem(
@@ -127,7 +132,7 @@ fun SearchHistoryList(
 }
 
 /**
- * Individual search history item
+ * Individual search history item - RTL layout
  */
 @Composable
 fun SearchHistoryItem(
@@ -142,15 +147,9 @@ fun SearchHistoryItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colors.primary.copy(alpha = 0.6f),
-            modifier = Modifier.padding(end = 16.dp)
-        )
-        
         Column(
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.End // Align content to the right
         ) {
             Text(
                 text = historyItem.searchTerm,
@@ -159,20 +158,32 @@ fun SearchHistoryItem(
                     textDirection = TextDirection.Rtl
                 ),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
             )
             
             Spacer(modifier = Modifier.height(4.dp))
             
-            // Format the date
+            // Format the date - also right-aligned
             val formattedDate = formatDate(historyItem.timestamp)
             Text(
                 text = formattedDate,
                 style = MaterialTheme.typography.caption,
                 color = Color.Gray,
-                fontSize = 12.sp
+                fontSize = 12.sp,
+                textAlign = TextAlign.Right,
+                modifier = Modifier.fillMaxWidth()
             )
         }
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        // Search icon on the right side for RTL layout
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colors.primary.copy(alpha = 0.6f)
+        )
     }
 }
 

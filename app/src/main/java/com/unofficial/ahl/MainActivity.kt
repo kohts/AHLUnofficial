@@ -233,6 +233,9 @@ fun SearchBar(
     // State to track if history should be shown (controlled by History button)
     var showHistory by remember { mutableStateOf(false) }
     
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Column(modifier = modifier) {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -246,8 +249,6 @@ fun SearchBar(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            val focusRequester = remember { FocusRequester() }
-            val keyboardController = LocalSoftwareKeyboardController.current
 
             OutlinedTextField(
                 value = query,
@@ -346,7 +347,12 @@ fun SearchBar(
                     showHistory = false // Hide history after selection
                 },
                 onClearHistory = onClearHistory,
-                onDismiss = { showHistory = false }
+                onDismiss = { 
+                    showHistory = false 
+                    // Focus back into search field and show keyboard
+                    focusRequester.requestFocus()
+                    keyboardController?.show()
+                }
             )
         }
     }

@@ -32,7 +32,7 @@ interface SearchHistoryDao {
      * @param keepCount The number of entries to keep
      */
     @Query("DELETE FROM search_history WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT :keepCount)")
-    suspend fun deleteOldSearches(keepCount: Int = 10)
+    suspend fun deleteOldSearches(keepCount: Int = 100)
     
     /**
      * Delete all search history entries

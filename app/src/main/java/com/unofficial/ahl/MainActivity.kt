@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -229,6 +230,8 @@ fun SearchBar(
 ) {
     // State to track if search field is focused
     var isSearchFocused by remember { mutableStateOf(false) }
+    // State to track if history should be shown (controlled by History button)
+    var showHistory by remember { mutableStateOf(false) }
     
     Column(modifier = modifier) {
         Row(
@@ -257,13 +260,30 @@ fun SearchBar(
                 keyboardActions = KeyboardActions(
                     onSearch = { 
                         onSearch()
-                        isSearchFocused = false 
+                        isSearchFocused = false
+                        showHistory = false // Hide history when search is performed
                     }
                 ),
                 textStyle = MaterialTheme.typography.body1.copy(
                     textAlign = TextAlign.Right,
                     textDirection = TextDirection.Rtl
                 ),
+                leadingIcon = {
+                    // History icon button - only show if there's search history
+                    if (searchHistory.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                showHistory = !showHistory
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = stringResource(R.string.search_history),
+                                tint = if (showHistory) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(
@@ -272,6 +292,7 @@ fun SearchBar(
                                 focusRequester.requestFocus()
                                 keyboardController?.show()
                                 onClearClick()
+                                showHistory = false // Hide history when clearing
                             }
                         ) {
                             Icon(
@@ -287,6 +308,10 @@ fun SearchBar(
                     .focusRequester(focusRequester)
                     .onFocusChanged { focusState ->
                         isSearchFocused = focusState.isFocused
+                        // Hide history when field loses focus
+                        if (!focusState.isFocused) {
+                            showHistory = false
+                        }
                     }
             )
 
@@ -312,16 +337,16 @@ fun SearchBar(
             }
         }
         
-        // Show search history if the search field is focused and there's history
-        if (isSearchFocused && searchHistory.isNotEmpty()) {
+        // Show search history only when explicitly requested by user clicking History button
+        if (showHistory && searchHistory.isNotEmpty()) {
             SearchHistoryList(
                 searchHistory = searchHistory,
                 onHistoryItemClick = { 
                     onHistoryItemClick(it)
-                    isSearchFocused = false // Hide history after selection
+                    showHistory = false // Hide history after selection
                 },
                 onClearHistory = onClearHistory,
-                onDismiss = { isSearchFocused = false }
+                onDismiss = { showHistory = false }
             )
         }
     }

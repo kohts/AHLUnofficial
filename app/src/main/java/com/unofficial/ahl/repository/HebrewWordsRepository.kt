@@ -55,7 +55,7 @@ class HebrewWordsRepository(context: Context) {
                 searchHistoryDao.insertSearchHistory(searchHistory)
                 
                 // Clean up old entries to keep only the most recent ones
-                searchHistoryDao.deleteOldSearches(10)
+                searchHistoryDao.deleteOldSearches(100)
             } else {
                 // Just update the timestamp of the existing entry by removing and re-adding
                 val searchHistory = SearchHistory(
@@ -72,7 +72,7 @@ class HebrewWordsRepository(context: Context) {
      * @param limit The maximum number of entries to return
      * @return Flow of search history entries, ordered by timestamp (newest first)
      */
-    fun getSearchHistory(limit: Int = 10) = searchHistoryDao.getRecentSearches(limit)
+    fun getSearchHistory(limit: Int = 100) = searchHistoryDao.getRecentSearches(limit)
     
     /**
      * Clear the search history

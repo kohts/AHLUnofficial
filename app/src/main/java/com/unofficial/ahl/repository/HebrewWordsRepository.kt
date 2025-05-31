@@ -12,6 +12,7 @@ import com.unofficial.ahl.model.SearchHistory
 import com.unofficial.ahl.util.HtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.map
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import retrofit2.HttpException
@@ -70,9 +71,43 @@ class HebrewWordsRepository(context: Context) {
     /**
      * Get the search history
      * @param limit The maximum number of entries to return
-     * @return Flow of search history entries, ordered by timestamp (newest first)
+     * @return Flow of search history entries, ordered by timestamp (newest first), with consecutive duplicates filtered out
      */
     fun getSearchHistory(limit: Int = 100) = searchHistoryDao.getRecentSearches(limit)
+        .map { historyList ->
+            filterConsecutiveDuplicates(historyList)
+        }
+    
+    /**
+     * Filter out consecutive duplicate search terms, keeping only the earliest occurrence of each consecutive group
+     * @param historyList List of search history entries ordered by timestamp DESC (newest first)
+     * @return Filtered list with consecutive duplicates removed
+     */
+    private fun filterConsecutiveDuplicates(historyList: List<SearchHistory>): List<SearchHistory> {
+        if (historyList.isEmpty()) return historyList
+        
+        val filtered = mutableListOf<SearchHistory>()
+        var i = 0
+        
+        while (i < historyList.size) {
+            val currentTerm = historyList[i].searchTerm
+            var j = i
+            
+            // Find the end of this consecutive group of same search terms
+            while (j < historyList.size && historyList[j].searchTerm == currentTerm) {
+                j++
+            }
+            
+            // Add the last item of this group (which has the earliest timestamp 
+            // since the list is ordered newest first)
+            filtered.add(historyList[j - 1])
+            
+            // Move to the next group
+            i = j
+        }
+        
+        return filtered
+    }
     
     /**
      * Clear the search history

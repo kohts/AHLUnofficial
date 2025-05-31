@@ -182,11 +182,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Update the search query
         _searchQuery.value = historyItem.searchTerm
         
-        // Perform the search
-        searchWords(forceRefresh = false)
+        // Perform the search without adding to history (since it's already in history)
+        _uiState.value = UiState.Loading
+        
+        viewModelScope.launch {
+            // Save the query to preferences
+            preferencesManager.saveSearchQuery(historyItem.searchTerm)
+            
+            when (val result = repository.searchWords(historyItem.searchTerm, forceRefresh = false, addToHistory = false)) {
+                is ApiResult.Success -> {
+                    val words = result.data
+                    _uiState.value = if (words.isEmpty()) {
+                        UiState.NoResults
+                    } else {
+                        // Check if any words have invalid data (null titles)
+                        val containsInvalidData = words.any { it.title.isNullOrBlank() }
+                        if (containsInvalidData) {
+                            _invalidDataDetected.value = true
+                        }
+                        
+                        UiState.Success(words)
+                    }
+                }
+                is ApiResult.Error -> {
+                    // Track the API error
+                    _apiError.value = ApiError(
+                        message = result.message,
+                        timestamp = Date(),
+                        searchTerm = historyItem.searchTerm,
+                        statusCode = result.statusCode
+                    )
+                    
+                    // Try again but explicitly use cache only (without adding to history)
+                    tryFallbackToCacheWithoutHistory(historyItem.searchTerm)
+                }
+            }
+        }
         
         // Hide the search history
         _showSearchHistory.value = false
+    }
+    
+    /**
+     * Try to fetch results from cache as a fallback without adding to history
+     */
+    private fun tryFallbackToCacheWithoutHistory(query: String) {
+        viewModelScope.launch {
+            try {
+                // This is a more explicit way to try to get data from cache only without adding to history
+                val cachedResult = repository.searchWords(query, forceRefresh = false, addToHistory = false)
+                
+                when (cachedResult) {
+                    is ApiResult.Success -> {
+                        val words = cachedResult.data
+                        if (words.isNotEmpty()) {
+                            _uiState.value = UiState.Success(words)
+                            return@launch
+                        }
+                    }
+                    else -> { /* Cache fallback also failed */ }
+                }
+                
+                // If we get here, even the cache fallback failed
+                _uiState.value = UiState.Error("Failed to load data. No cached results available.")
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error("Failed to load data. No cached results available.")
+            }
+        }
     }
     
     /**

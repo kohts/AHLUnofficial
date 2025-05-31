@@ -118,9 +118,10 @@ class HebrewWordsRepository(context: Context) {
      * Search for Hebrew words matching the query
      * @param query The search query
      * @param forceRefresh Whether to force a fresh API request
+     * @param addToHistory Whether to add this search to the search history
      * @return ApiResult with either the data or error details
      */
-    suspend fun searchWords(query: String, forceRefresh: Boolean = false): ApiResult<List<HebrewWord>> {
+    suspend fun searchWords(query: String, forceRefresh: Boolean = false, addToHistory: Boolean = true): ApiResult<List<HebrewWord>> {
         return withContext(Dispatchers.IO) {
             // Normalize the search term
             val normalizedQuery = normalizeSearchTerm(query)
@@ -137,8 +138,10 @@ class HebrewWordsRepository(context: Context) {
             
             // If we have valid cache data and not forcing refresh, return it immediately
             if (!forceRefresh && cachedWords.isNotEmpty()) {
-                // Add to search history when retrieved from cache
-                addToSearchHistory(normalizedQuery)
+                // Add to search history when retrieved from cache only if requested
+                if (addToHistory) {
+                    addToSearchHistory(normalizedQuery)
+                }
                 return@withContext ApiResult.Success(cachedWords)
             }
             
@@ -157,7 +160,9 @@ class HebrewWordsRepository(context: Context) {
                     
                     // If we have cached results, use them instead
                     if (cachedWords.isNotEmpty()) {
-                        addToSearchHistory(normalizedQuery)
+                        if (addToHistory) {
+                            addToSearchHistory(normalizedQuery)
+                        }
                         return@withContext ApiResult.Success(cachedWords)
                     }
                     
@@ -177,8 +182,10 @@ class HebrewWordsRepository(context: Context) {
                     )
                     searchCacheDao.insertCache(cacheEntry)
                     
-                    // Add to search history when API call is successful
-                    addToSearchHistory(normalizedQuery)
+                    // Add to search history when API call is successful only if requested
+                    if (addToHistory) {
+                        addToSearchHistory(normalizedQuery)
+                    }
                 }
                 
                 ApiResult.Success(validWords)
@@ -203,8 +210,10 @@ class HebrewWordsRepository(context: Context) {
                 
                 // Use cached data if available
                 if (cachedWords.isNotEmpty()) {
-                    // Add to search history when using cached fallback
-                    addToSearchHistory(normalizedQuery)
+                    // Add to search history when using cached fallback only if requested
+                    if (addToHistory) {
+                        addToSearchHistory(normalizedQuery)
+                    }
                     return@withContext ApiResult.Success(cachedWords)
                 }
                 

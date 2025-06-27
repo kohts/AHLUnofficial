@@ -31,6 +31,7 @@ import com.unofficial.ahl.model.SearchHistory
 import com.unofficial.ahl.ui.DetailScreen
 import com.unofficial.ahl.ui.screens.MainScreenLayout
 import com.unofficial.ahl.ui.components.SearchHistoryList
+import com.unofficial.ahl.ui.components.ZoomableBox
 import com.unofficial.ahl.viewmodel.MainViewModel
 import com.unofficial.ahl.viewmodel.ErrorViewModel
 import androidx.compose.foundation.text.KeyboardActions
@@ -38,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.input.pointer.pointerInput
 import android.content.ClipboardManager
@@ -178,27 +180,34 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                             }
                         }
 
-                        WordsList(
-                            words = words,
-                            onWordClick = { word ->
-                                viewModel.selectWord(word)
-                            },
-                            onCopyText = { text ->
-                                coroutineScope.launch {
-                                    scaffoldState.snackbarHostState.showSnackbar(
-                                        message = textCopiedMessage,
-                                        duration = SnackbarDuration.Short
-                                    )
-                                }
-                            },
-                            showKeyboardAfterScroll = showKeyboardAfterScroll,
-                            onScrollStopped = {
-                                if (showKeyboardAfterScroll) {
-                                    keyboardController?.show()
-                                    showKeyboardAfterScroll = false
-                                }
-                            }
-                        )
+                        ZoomableBox(
+                            modifier = Modifier.fillMaxSize()
+                        ) { onZoomChange, currentScale ->
+                            WordsList(
+                                words = words,
+                                onWordClick = { word ->
+                                    viewModel.selectWord(word)
+                                },
+                                onCopyText = { text ->
+                                    coroutineScope.launch {
+                                        scaffoldState.snackbarHostState.showSnackbar(
+                                            message = textCopiedMessage,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                },
+                                showKeyboardAfterScroll = showKeyboardAfterScroll,
+                                onScrollStopped = {
+                                    if (showKeyboardAfterScroll) {
+                                        keyboardController?.show()
+                                        showKeyboardAfterScroll = false
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                                onZoomChange = onZoomChange,
+                                currentScale = currentScale
+                            )
+                        }
                     }
 
                     is MainViewModel.UiState.NoResults -> {
@@ -366,7 +375,9 @@ fun WordsList(
     onCopyText: (String) -> Unit,
     showKeyboardAfterScroll: Boolean,
     onScrollStopped: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onZoomChange: ((Float) -> Unit)? = null,
+    currentScale: Float = 1f
 ) {
     // Get keyboard controller to hide keyboard on scroll
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -398,8 +409,17 @@ fun WordsList(
     }
 
     LazyColumn(
-        modifier = modifier,
-        state = listState
+        modifier = modifier
+            .pointerInput("list_zoom") {
+                detectTransformGestures { _, _, zoom, _ ->
+                    // Handle zoom even when scrolling - this takes priority
+                    onZoomChange?.invoke(zoom)
+                }
+            },
+        state = listState,
+        contentPadding = PaddingValues(
+            bottom = 200.dp * (currentScale - 1f) // Add extra bottom space when zoomed in
+        )
     ) {
         items(words) { word ->
             WordItem(
@@ -434,21 +454,7 @@ fun WordItem(
         modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onWordClick(word) },
-                    onLongPress = {
-                        // Copy to clipboard
-                        val clipboardManager =
-                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clipData = ClipData.newPlainText("hebrew_word", copyContent)
-                        clipboardManager.setPrimaryClip(clipData)
-
-                        // Notify through callback
-                        onCopyText(copyContent)
-                    }
-                )
-            },
+            .clickable { onWordClick(word) },
         horizontalAlignment = Alignment.End,
     ) {
         // Title with nikud and without - use fallbacks if title is null

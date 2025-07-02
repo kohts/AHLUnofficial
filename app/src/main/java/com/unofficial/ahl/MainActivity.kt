@@ -39,9 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.input.pointer.pointerInput
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.content.Context
@@ -80,6 +78,16 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     // State to track if keyboard should be shown after scroll stops
     var showKeyboardAfterScroll by remember { mutableStateOf(false) }
 
+    // Global zoom state management
+    var zoomScale by remember { mutableStateOf(1f) }
+    val minScale = 1f
+    val maxScale = 3f
+    
+    // Global zoom handler
+    val handleZoomChange: (Float) -> Unit = { zoomChange ->
+        zoomScale = (zoomScale * zoomChange).coerceIn(minScale, maxScale)
+    }
+
     // Pre-load string resources
     val apiErrorTitle = stringResource(R.string.api_error)
     val textCopiedMessage = stringResource(R.string.text_copied)
@@ -108,8 +116,12 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
         }
     }
 
-    // Use our new MainScreenLayout
-    MainScreenLayout(errorViewModel = errorViewModel) {
+    // Use our new MainScreenLayout with global gesture detection
+    MainScreenLayout(
+        errorViewModel = errorViewModel,
+        onZoomChange = handleZoomChange,
+        modifier = Modifier.fillMaxSize()
+    ) {
         // Content based on whether a word is selected or not
         if (selectedWord != null) {
             DetailScreen(
@@ -181,8 +193,9 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                         }
 
                         ZoomableBox(
+                            currentScale = zoomScale,
                             modifier = Modifier.fillMaxSize()
-                        ) { onZoomChange, currentScale ->
+                        ) {
                             WordsList(
                                 words = words,
                                 onWordClick = { word ->
@@ -204,8 +217,7 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
-                                onZoomChange = onZoomChange,
-                                currentScale = currentScale
+                                currentScale = zoomScale
                             )
                         }
                     }
@@ -376,7 +388,6 @@ fun WordsList(
     showKeyboardAfterScroll: Boolean,
     onScrollStopped: () -> Unit,
     modifier: Modifier = Modifier,
-    onZoomChange: ((Float) -> Unit)? = null,
     currentScale: Float = 1f
 ) {
     // Get keyboard controller to hide keyboard on scroll
@@ -409,13 +420,7 @@ fun WordsList(
     }
 
     LazyColumn(
-        modifier = modifier
-            .pointerInput("list_zoom") {
-                detectTransformGestures { _, _, zoom, _ ->
-                    // Handle zoom even when scrolling - this takes priority
-                    onZoomChange?.invoke(zoom)
-                }
-            },
+        modifier = modifier,
         state = listState,
         contentPadding = PaddingValues(
             bottom = 200.dp * (currentScale - 1f) // Add extra bottom space when zoomed in

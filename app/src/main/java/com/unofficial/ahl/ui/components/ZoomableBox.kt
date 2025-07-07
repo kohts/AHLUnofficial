@@ -12,10 +12,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 
 /**
- * A composable that applies zoom transformations to its content
+ * A composable that applies zoom and pan transformations to its content
  * Content stays within its original bounds - no panning outside the container
  * @param modifier Modifier to be applied to the container
  * @param currentScale Current scale factor from external state
+ * @param transformOrigin Transform origin for zoom operations
+ * @param panOffsetX Horizontal pan offset
+ * @param panOffsetY Vertical pan offset
  * @param onTap Optional callback for tap gestures
  * @param content The content to make zoomable
  */
@@ -23,6 +26,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 fun ZoomableBox(
     modifier: Modifier = Modifier,
     currentScale: Float = 1f,
+    transformOrigin: TransformOrigin = TransformOrigin(1f, 0f),
+    panOffsetX: Float = 0f,
+    panOffsetY: Float = 0f,
     onTap: ((Offset) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
@@ -44,8 +50,9 @@ fun ZoomableBox(
                 .graphicsLayer(
                     scaleX = currentScale,
                     scaleY = currentScale,
-                    // No translation - content stays in original position
-                    transformOrigin = TransformOrigin(1f, 0f)
+                    translationX = panOffsetX,
+                    translationY = panOffsetY,
+                    transformOrigin = transformOrigin
                 )
         ) {
             content()

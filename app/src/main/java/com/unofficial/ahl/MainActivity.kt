@@ -48,6 +48,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.platform.LocalConfiguration
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -78,14 +83,88 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     // State to track if keyboard should be shown after scroll stops
     var showKeyboardAfterScroll by remember { mutableStateOf(false) }
 
-    // Global zoom state management
+    // Global zoom and pan state management
     var zoomScale by remember { mutableStateOf(1f) }
+    var panOffsetX by remember { mutableStateOf(0f) }
+    var panOffsetY by remember { mutableStateOf(0f) }
+    var transformOrigin by remember { mutableStateOf(TransformOrigin(1f, 0f)) }
     val minScale = 1f
     val maxScale = 3f
     
-    // Global zoom handler
-    val handleZoomChange: (Float) -> Unit = { zoomChange ->
-        zoomScale = (zoomScale * zoomChange).coerceIn(minScale, maxScale)
+    // Calculate approximate search bar height (for coordinate conversion)
+    val searchBarApproxHeight = 140.dp // App title + search field + refresh button
+    
+    // Get density and configuration in @Composable context
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    
+    // Global zoom and pan handler
+    val handleZoomAndPan: (Float, Offset?, Offset?) -> Unit = { zoomChange, gestureCenter, panDelta ->
+        Log.d("ZoomPan", "Handler called: zoomChange=$zoomChange, gestureCenter=$gestureCenter, panDelta=$panDelta")
+        
+        val newScale = (zoomScale * zoomChange).coerceIn(minScale, maxScale)
+        
+        Log.d("ZoomPan", "Scale: $zoomScale -> $newScale")
+        
+        // Update transform origin based on gesture center if provided
+        gestureCenter?.let { center ->
+            // Convert global Y coordinate to relative position within word view
+            val searchBarHeightPx = with(density) { searchBarApproxHeight.toPx() }
+            val screenHeightPx = configuration.screenHeightDp * density.density
+            
+            // Calculate relative Y position within the word view area
+            val wordViewStartY = searchBarHeightPx
+            val wordViewHeight = screenHeightPx - wordViewStartY
+            
+            val wordViewRelativeY = if (center.y >= wordViewStartY && wordViewHeight > 0) {
+                // Gesture is in the word view area - calculate relative position
+                ((center.y - wordViewStartY) / wordViewHeight).coerceIn(0f, 1f)
+            } else {
+                // Gesture is outside word view area - maintain current origin or default
+                transformOrigin.pivotFractionY.coerceIn(0f, 1f)
+            }
+            
+            transformOrigin = TransformOrigin(
+                pivotFractionX = 1f, // Always zoom from right side
+                pivotFractionY = wordViewRelativeY
+            )
+            
+            Log.d("ZoomPan", "Updated transform origin: $transformOrigin")
+        }
+        
+        // Handle pan offset with bounds checking
+        panDelta?.let { delta ->
+            Log.d("ZoomPan", "Processing pan delta: $delta")
+            
+            val screenWidth = configuration.screenWidthDp * density.density
+            val screenHeight = configuration.screenHeightDp * density.density
+            
+            // Calculate maximum pan bounds based on zoom level
+            // When zoomed in, content becomes larger, so we can pan more
+            val maxPanX = if (newScale > 1f) (screenWidth * (newScale - 1f)) / 2f else 0f
+            val maxPanY = if (newScale > 1f) (screenHeight * (newScale - 1f)) / 2f else 0f
+            
+            Log.d("ZoomPan", "Pan bounds: maxX=$maxPanX, maxY=$maxPanY")
+            
+            val oldPanX = panOffsetX
+            val oldPanY = panOffsetY
+            
+            // Apply pan delta with bounds checking
+            panOffsetX = (panOffsetX + delta.x).coerceIn(-maxPanX, maxPanX)
+            panOffsetY = (panOffsetY + delta.y).coerceIn(-maxPanY, maxPanY)
+            
+            Log.d("ZoomPan", "Pan offset: X: $oldPanX -> $panOffsetX, Y: $oldPanY -> $panOffsetY")
+        }
+        
+        // Reset pan when zoom is back to 1x
+        if (newScale <= minScale) {
+            Log.d("ZoomPan", "Resetting pan offsets (zoom back to 1x)")
+            panOffsetX = 0f
+            panOffsetY = 0f
+        }
+        
+        zoomScale = newScale
+        Log.d("ZoomPan", "Final state: scale=$zoomScale, panX=$panOffsetX, panY=$panOffsetY")
     }
 
     // Pre-load string resources
@@ -119,7 +198,8 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     // Use our new MainScreenLayout with global gesture detection
     MainScreenLayout(
         errorViewModel = errorViewModel,
-        onZoomChange = handleZoomChange,
+        onZoomChange = handleZoomAndPan,
+        currentZoomScale = zoomScale,
         modifier = Modifier.fillMaxSize()
     ) {
         // Content based on whether a word is selected or not
@@ -194,6 +274,9 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
 
                         ZoomableBox(
                             currentScale = zoomScale,
+                            transformOrigin = transformOrigin,
+                            panOffsetX = panOffsetX,
+                            panOffsetY = panOffsetY,
                             modifier = Modifier.fillMaxSize()
                         ) {
                             WordsList(
@@ -422,6 +505,8 @@ fun WordsList(
     LazyColumn(
         modifier = modifier,
         state = listState,
+        // Disable scrolling when zoomed in - let global pan gestures handle it
+        userScrollEnabled = currentScale <= 1f,
         contentPadding = PaddingValues(
             bottom = 200.dp * (currentScale - 1f) // Add extra bottom space when zoomed in
         )

@@ -161,10 +161,10 @@ fun MainScreenLayout(
         
         // Error details overlay - on top of everything
         if (showErrorDetails) {
-            val lastErrorSession = errorViewModel.getLastErrorSession()
-            lastErrorSession?.let { session ->
+            val mostRecentError = errorViewModel.getMostRecentErrorDetails()
+            mostRecentError?.let { errorDetails ->
                 ErrorDetailsView(
-                    session = session,
+                    errorDetails = errorDetails,
                     onClose = { errorViewModel.hideErrorDetails() },
                     modifier = Modifier
                         .fillMaxSize()

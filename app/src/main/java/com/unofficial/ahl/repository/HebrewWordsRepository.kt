@@ -9,6 +9,9 @@ import com.unofficial.ahl.database.AppDatabase
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.model.SearchCache
 import com.unofficial.ahl.model.SearchHistory
+import com.unofficial.ahl.model.DafMilaCache
+import com.unofficial.ahl.model.DafMilaResponse
+import com.unofficial.ahl.model.AhlDafMilaAjax
 import com.unofficial.ahl.util.HtmlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,11 +24,29 @@ import java.io.IOException
 /**
  * Repository for Hebrew words data operations
  */
-class HebrewWordsRepository(context: Context) {
+class HebrewWordsRepository private constructor(context: Context) {
     private val api: AhlApi = NetworkModule.provideAhlApi()
     private val searchCacheDao = AppDatabase.getDatabase(context).searchCacheDao()
     private val searchHistoryDao = AppDatabase.getDatabase(context).searchHistoryDao()
+    private val dafMilaCacheDao = AppDatabase.getDatabase(context).dafMilaCacheDao()
     private val gson = Gson()
+    
+    /**
+     * Last error from fetchDafMilaDetails operation for debugging
+     */
+    var lastFetchDafMilaDetailsError: DafMilaDetailsError? = null
+        private set
+    
+    companion object {
+        @Volatile
+        private var INSTANCE: HebrewWordsRepository? = null
+        
+        fun getInstance(context: Context): HebrewWordsRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: HebrewWordsRepository(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+    }
     
     /**
      * Result class that wraps successful and error responses
@@ -38,6 +59,18 @@ class HebrewWordsRepository(context: Context) {
             val statusCode: Int? = null
         ) : ApiResult<Nothing>()
     }
+    
+    /**
+     * Detailed error information for fetchDafMilaDetails operations
+     */
+    data class DafMilaDetailsError(
+        val exception: Exception,
+        val message: String,
+        val timestamp: Date,
+        val keyword: String,
+        val statusCode: Int? = null,
+        val htmlResponse: String? = null
+    )
     
     /**
      * Add an entry to the search history
@@ -223,59 +256,227 @@ class HebrewWordsRepository(context: Context) {
     }
     
     /**
-     * Fetch detailed information about a Hebrew word from the Hebrew Academy website
-     * @param keyword The keyword from the HebrewWord object
-     * @return ApiResult with either the HTML content or error details
+     * Fetch detailed word data using the Hebrew Academy AJAX API (4-step process)
+     * @param keyword The Hebrew word keyword to fetch details for
+     * @param forceRefresh Whether to force a fresh API request, bypassing cache
+     * @return ApiResult with either DafMilaResponse data or error details
      */
-    suspend fun fetchWordDetails(keyword: String?): ApiResult<String> {
+    suspend fun fetchDafMilaDetails(keyword: String, forceRefresh: Boolean = false): ApiResult<DafMilaResponse> {
         return withContext(Dispatchers.IO) {
+            var htmlContent: String? = null
+            
             try {
-                // Validate the keyword is not null
-                if (keyword.isNullOrBlank()) {
+                // Validate input
+                if (keyword.isBlank()) {
+                    val exception = InvalidDataException("Keyword is blank")
+                    val errorMessage = "No valid keyword provided"
+                    lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                        exception = exception,
+                        message = errorMessage,
+                        timestamp = Date(),
+                        keyword = keyword,
+                        statusCode = null,
+                        htmlResponse = null
+                    )
                     return@withContext ApiResult.Error(
-                        exception = InvalidDataException("Keyword is null or blank"),
-                        message = "No valid keyword to fetch details"
+                        exception = exception,
+                        message = errorMessage
                     )
                 }
                 
-                // Construct the URL for the word details page
-                // keyword changed to דף-מילה (keyword page)
-                val detailsUrl = "https://hebrew-academy.org.il/keyword/$keyword"
+                // Check cache first if not forcing refresh
+                if (!forceRefresh) {
+                    val cachedResult = dafMilaCacheDao.getCachedWordDetails(keyword)
+                    if (cachedResult != null) {
+                        val cachedData = parseDafMilaJson(cachedResult.apiResponse)
+                        if (cachedData != null) {
+                            return@withContext ApiResult.Success(cachedData)
+                        }
+                    }
+                }
                 
-                // Fetch the HTML content
-                val response = api.fetchHtmlContent(detailsUrl)
-                val htmlContent = response.string()
+                // Step 1: Build keyword detail page URL and fetch HTML
+                val keywordUrl = HtmlParser.buildKeywordDetailUrl(keyword)
+                val htmlResponse = api.fetchHtmlContent(keywordUrl)
+                htmlContent = htmlResponse.string()
                 
-                // Extract the relevant content using the HTML parser
-                val extractedContent = HtmlParser.extractContent(htmlContent)
-                
-                if (extractedContent.isBlank()) {
+                // Step 2: Extract ahl_daf_mila_ajax JavaScript variable
+                val ajaxConfig = HtmlParser.extractAhlDafMilaAjax(htmlContent)
+                if (ajaxConfig == null) {
+                    val exception = InvalidDataException("AJAX config not found")
+                    val errorMessage = "Could not extract AJAX configuration from HTML"
+                    lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                        exception = exception,
+                        message = errorMessage,
+                        timestamp = Date(),
+                        keyword = keyword,
+                        statusCode = null,
+                        htmlResponse = htmlContent
+                    )
                     return@withContext ApiResult.Error(
-                        exception = InvalidDataException("No content found"),
-                        message = "No relevant content found on the details page"
+                        exception = exception,
+                        message = errorMessage
                     )
                 }
                 
-                ApiResult.Success(extractedContent)
+                // Step 3: Build AJAX URL and make request
+                val ajaxUrl = HtmlParser.buildAjaxUrl(ajaxConfig, keyword)
+                val ajaxResponse = api.fetchDafMilaAjax(ajaxUrl)
+                
+                // Validate AJAX response
+                if (!ajaxResponse.success || ajaxResponse.data.isNullOrBlank()) {
+                    val exception = InvalidDataException("AJAX request failed")
+                    val errorMessage = "AJAX request returned unsuccessful response or no data"
+                    lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                        exception = exception,
+                        message = errorMessage,
+                        timestamp = Date(),
+                        keyword = keyword,
+                        statusCode = null,
+                        htmlResponse = htmlContent
+                    )
+                    return@withContext ApiResult.Error(
+                        exception = exception,
+                        message = errorMessage
+                    )
+                }
+                
+                // Step 4: Parse the nested JSON data
+                val dafMilaData = parseDafMilaJson(ajaxResponse.data)
+                if (dafMilaData == null) {
+                    val exception = InvalidDataException("Failed to parse response data")
+                    val errorMessage = "Could not parse the detailed word data from response"
+                    lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                        exception = exception,
+                        message = errorMessage,
+                        timestamp = Date(),
+                        keyword = keyword,
+                        statusCode = null,
+                        htmlResponse = htmlContent
+                    )
+                    return@withContext ApiResult.Error(
+                        exception = exception,
+                        message = errorMessage
+                    )
+                }
+                
+                // Cache the successful result
+                val cacheEntry = DafMilaCache(
+                    keyword = keyword,
+                    apiResponse = ajaxResponse.data,
+                    timestamp = Date()
+                )
+                dafMilaCacheDao.insertCache(cacheEntry)
+                
+                ApiResult.Success(dafMilaData)
+                
+            } catch (e: HttpException) {
+                val errorMessage = "HTTP error: ${e.message()} (${e.code()})"
+                lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                    exception = e,
+                    message = errorMessage,
+                    timestamp = Date(),
+                    keyword = keyword,
+                    statusCode = e.code(),
+                    htmlResponse = htmlContent
+                )
+                
+                // Try to use cached data as fallback
+                val cachedResult = dafMilaCacheDao.getCachedWordDetails(keyword)
+                if (cachedResult != null) {
+                    val cachedData = parseDafMilaJson(cachedResult.apiResponse)
+                    if (cachedData != null) {
+                        return@withContext ApiResult.Success(cachedData)
+                    }
+                }
+                
+                ApiResult.Error(
+                    exception = e,
+                    message = errorMessage,
+                    statusCode = e.code()
+                )
+            } catch (e: IOException) {
+                val errorMessage = "Network error: ${e.message}"
+                lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                    exception = e,
+                    message = errorMessage,
+                    timestamp = Date(),
+                    keyword = keyword,
+                    statusCode = null,
+                    htmlResponse = htmlContent
+                )
+                
+                // Try to use cached data as fallback
+                val cachedResult = dafMilaCacheDao.getCachedWordDetails(keyword)
+                if (cachedResult != null) {
+                    val cachedData = parseDafMilaJson(cachedResult.apiResponse)
+                    if (cachedData != null) {
+                        return@withContext ApiResult.Success(cachedData)
+                    }
+                }
+                
+                ApiResult.Error(
+                    exception = e,
+                    message = errorMessage
+                )
             } catch (e: Exception) {
-                // Log the error
                 e.printStackTrace()
+                val errorMessage = "Unexpected error: ${e.message}"
+                lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                    exception = e,
+                    message = errorMessage,
+                    timestamp = Date(),
+                    keyword = keyword,
+                    statusCode = null,
+                    htmlResponse = htmlContent
+                )
                 
-                // Extract HTTP status code if available
-                val statusCode = when (e) {
-                    is HttpException -> e.code()
-                    else -> null
+                // Try to use cached data as fallback
+                val cachedResult = dafMilaCacheDao.getCachedWordDetails(keyword)
+                if (cachedResult != null) {
+                    val cachedData = parseDafMilaJson(cachedResult.apiResponse)
+                    if (cachedData != null) {
+                        return@withContext ApiResult.Success(cachedData)
+                    }
                 }
                 
-                // Generate a meaningful error message
-                val errorMessage = when (e) {
-                    is HttpException -> "Server error: ${e.message()} (${e.code()})"
-                    is IOException -> "Network error: ${e.message}"
-                    else -> "Unknown error: ${e.message}"
-                }
-                
-                ApiResult.Error(e, errorMessage, statusCode)
+                ApiResult.Error(
+                    exception = e,
+                    message = errorMessage
+                )
             }
+        }
+    }
+    
+    /**
+     * Clear the last DafMila details error
+     */
+    fun clearDafMilaDetailsError() {
+        lastFetchDafMilaDetailsError = null
+    }
+    
+    /**
+     * Clean old DafMila cache entries
+     * @param maxAgeInDays Maximum age in days for cache entries
+     */
+    suspend fun cleanOldDafMilaCache(maxAgeInDays: Int = 30) {
+        withContext(Dispatchers.IO) {
+            val cutoffTime = Date().time - TimeUnit.DAYS.toMillis(maxAgeInDays.toLong())
+            dafMilaCacheDao.deleteOldEntries(cutoffTime)
+        }
+    }
+    
+    /**
+     * Parse JSON string into DafMilaResponse object
+     * @param json The JSON string to parse
+     * @return Parsed DafMilaResponse or null if parsing fails
+     */
+    private fun parseDafMilaJson(json: String): DafMilaResponse? {
+        return try {
+            gson.fromJson(json, DafMilaResponse::class.java)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
     

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.unofficial.ahl.model.HebrewWord
 import com.unofficial.ahl.model.SearchHistory
+import com.unofficial.ahl.model.DafMilaResponse
 import com.unofficial.ahl.repository.HebrewWordsRepository
 import com.unofficial.ahl.repository.HebrewWordsRepository.ApiResult
 import com.unofficial.ahl.data.PreferencesManager
@@ -19,7 +20,7 @@ import java.util.Date
  * ViewModel for the main screen
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = HebrewWordsRepository(application.applicationContext)
+    private val repository = HebrewWordsRepository.getInstance(application.applicationContext)
     private val preferencesManager = PreferencesManager(application.applicationContext)
     
     // UI state
@@ -45,13 +46,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _invalidDataDetected = MutableStateFlow(false)
     val invalidDataDetected: StateFlow<Boolean> = _invalidDataDetected.asStateFlow()
     
-    // Selected word details
-    private val _wordDetailsState = MutableStateFlow<WordDetailsState>(WordDetailsState.Initial)
-    val wordDetailsState: StateFlow<WordDetailsState> = _wordDetailsState.asStateFlow()
-    
     // Selected word
     private val _selectedWord = MutableStateFlow<HebrewWord?>(null)
     val selectedWord: StateFlow<HebrewWord?> = _selectedWord.asStateFlow()
+    
+    // DafMila detailed word data state
+    private val _dafMilaState = MutableStateFlow<DafMilaState>(DafMilaState.Initial)
+    val dafMilaState: StateFlow<DafMilaState> = _dafMilaState.asStateFlow()
+    
+    // DafMila refresh flag - tracks if user requested refresh
+    private val _dafMilaRefreshRequested = MutableStateFlow(false)
+    val dafMilaRefreshRequested: StateFlow<Boolean> = _dafMilaRefreshRequested.asStateFlow()
     
     // When ViewModel is created, load saved preferences and search results
     init {
@@ -259,39 +264,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Select a word and fetch its details
+     * Select a word and fetch its detailed DafMila data
      * @param word The selected HebrewWord
+     * @param forceRefresh Whether to force refresh from API (bypass cache)
      */
-    fun selectWord(word: HebrewWord) {
+    fun selectWordForDafMila(word: HebrewWord, forceRefresh: Boolean = false) {
         _selectedWord.value = word
-        _wordDetailsState.value = WordDetailsState.Loading
+        _dafMilaState.value = DafMilaState.Loading
+        _dafMilaRefreshRequested.value = forceRefresh
         
         viewModelScope.launch {
-            when (val result = repository.fetchWordDetails(word.keyword)) {
+            val keyword = word.keyword
+            if (keyword.isNullOrBlank()) {
+                _dafMilaState.value = DafMilaState.Error("No valid keyword available for detailed data")
+                return@launch
+            }
+            
+            when (val result = repository.fetchDafMilaDetails(keyword, forceRefresh)) {
                 is ApiResult.Success -> {
-                    _wordDetailsState.value = WordDetailsState.Success(result.data)
+                    _dafMilaState.value = DafMilaState.Success(result.data)
                 }
                 is ApiResult.Error -> {
-                    _wordDetailsState.value = WordDetailsState.Error("Failed to load details: ${result.message}")
-                    
-                    // Also track as an API error
-                    _apiError.value = ApiError(
-                        message = result.message,
-                        timestamp = Date(),
-                        searchTerm = word.keyword ?: "",
-                        statusCode = result.statusCode
-                    )
+                    _dafMilaState.value = DafMilaState.Error("Failed to load detailed data: ${result.message}")
+                    // Error details are now stored in repository.lastFetchDafMilaDetailsError
                 }
             }
         }
     }
     
     /**
-     * Clear the current word selection
+     * Refresh DafMila data for the currently selected word
+     */
+    fun refreshDafMilaData() {
+        val currentWord = _selectedWord.value
+        if (currentWord != null) {
+            selectWordForDafMila(currentWord, forceRefresh = true)
+        }
+    }
+    
+    /**
+     * Clear the current word selection and reset all detail states
      */
     fun clearWordSelection() {
         _selectedWord.value = null
-        _wordDetailsState.value = WordDetailsState.Initial
+        _dafMilaState.value = DafMilaState.Initial
+        _dafMilaRefreshRequested.value = false
+    }
+    
+    /**
+     * Clear only the DafMila state (keep word selection)
+     */
+    fun clearDafMilaState() {
+        _dafMilaState.value = DafMilaState.Initial
+        _dafMilaRefreshRequested.value = false
     }
     
     /**
@@ -330,12 +355,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
-     * Sealed class representing the word details state
+     * Sealed class representing the DafMila detailed data state
      */
-    sealed class WordDetailsState {
-        data object Initial : WordDetailsState()
-        data object Loading : WordDetailsState()
-        data class Success(val detailsHtml: String) : WordDetailsState()
-        data class Error(val message: String) : WordDetailsState()
+    sealed class DafMilaState {
+        data object Initial : DafMilaState()
+        data object Loading : DafMilaState()
+        data class Success(val data: DafMilaResponse) : DafMilaState()
+        data class Error(val message: String) : DafMilaState()
     }
 } 

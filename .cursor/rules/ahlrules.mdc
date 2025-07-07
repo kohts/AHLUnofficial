@@ -3,6 +3,10 @@ description:
 globs: 
 alwaysApply: true
 ---
-When changing database schema always make sure to respect backward compatibility: the user should not lose his/her data which was accumulated when installing new version of the software.
+When changing database schema always make sure to respect backward compatibility: the user should not lose his/her data which was accumulated when installing new version of the application.
 
 If it is not possible to respect the rule of backward compatibility: ask me what to do, do not implicitely drop user data.
+
+If you want to modify comments - please confirm with me before doing so: please confirm each block of comments which you want to modify, so that I could confirm.
+
+If you want to refactor anything - not related to my request - please confirm with me each piece of refactoring.

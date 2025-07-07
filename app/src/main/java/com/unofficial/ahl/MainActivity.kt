@@ -73,7 +73,7 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val apiError by viewModel.apiError.collectAsState()
     val selectedWord by viewModel.selectedWord.collectAsState()
-    val wordDetailsState by viewModel.wordDetailsState.collectAsState()
+    val dafMilaState by viewModel.dafMilaState.collectAsState()
     val invalidDataDetected by viewModel.invalidDataDetected.collectAsState()
     val searchHistory by viewModel.searchHistory.collectAsState(initial = emptyList())
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -195,6 +195,14 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
         }
     }
 
+    // Handle DafMila errors - trigger ErrorBanner when DafMila errors occur
+    LaunchedEffect(dafMilaState) {
+        if (dafMilaState is MainViewModel.DafMilaState.Error) {
+            // Trigger ErrorViewModel to check for DafMila errors and show ErrorBanner
+            errorViewModel.updateErrorFromAllSources()
+        }
+    }
+
     // Use our new MainScreenLayout with global gesture detection
     MainScreenLayout(
         errorViewModel = errorViewModel,
@@ -206,8 +214,9 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
         if (selectedWord != null) {
             DetailScreen(
                 selectedWord = selectedWord,
-                detailsState = wordDetailsState,
-                onBackClick = { viewModel.clearWordSelection() }
+                dafMilaState = dafMilaState,
+                onBackClick = { viewModel.clearWordSelection() },
+                onRefreshClick = { viewModel.refreshDafMilaData() }
             )
         } else {
             // Main content
@@ -282,7 +291,7 @@ fun AhlApp(viewModel: MainViewModel, errorViewModel: ErrorViewModel) {
                             WordsList(
                                 words = words,
                                 onWordClick = { word ->
-                                    viewModel.selectWord(word)
+                                    viewModel.selectWordForDafMila(word)
                                 },
                                 onCopyText = { text ->
                                     coroutineScope.launch {

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.unofficial.ahl.api.DetailedSession
 import com.unofficial.ahl.repository.HebrewWordsRepository.DafMilaDetailsError
+import com.unofficial.ahl.util.HtmlParsingException
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -179,6 +180,17 @@ private fun formatDafMilaError(error: DafMilaDetailsError): String {
         appendLine("=== EXCEPTION DETAILS ===")
         appendLine("Exception Type: ${error.exception::class.qualifiedName}")
         appendLine("Exception Message: ${error.exception.message}")
+        
+        // Show detailed context for HTML parsing exceptions
+        if (error.exception is HtmlParsingException) {
+            appendLine()
+            appendLine("=== HTML PARSING CONTEXT ===")
+            error.exception.jsObject?.let { jsObj ->
+                appendLine("Extracted JS Object (this should be valid JSON):")
+                appendLine(jsObj)
+                appendLine()
+            }
+        }
         
         error.exception.cause?.let { cause ->
             appendLine("Caused by: ${cause::class.simpleName}: ${cause.message}")

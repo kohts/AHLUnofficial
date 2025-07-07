@@ -13,6 +13,7 @@ import com.unofficial.ahl.model.DafMilaCache
 import com.unofficial.ahl.model.DafMilaResponse
 import com.unofficial.ahl.model.AhlDafMilaAjax
 import com.unofficial.ahl.util.HtmlParser
+import com.unofficial.ahl.util.HtmlParsingException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
@@ -302,22 +303,6 @@ class HebrewWordsRepository private constructor(context: Context) {
                 
                 // Step 2: Extract ahl_daf_mila_ajax JavaScript variable
                 val ajaxConfig = HtmlParser.extractAhlDafMilaAjax(htmlContent)
-                if (ajaxConfig == null) {
-                    val exception = InvalidDataException("AJAX config not found")
-                    val errorMessage = "Could not extract AJAX configuration from HTML"
-                    lastFetchDafMilaDetailsError = DafMilaDetailsError(
-                        exception = exception,
-                        message = errorMessage,
-                        timestamp = Date(),
-                        keyword = keyword,
-                        statusCode = null,
-                        htmlResponse = htmlContent
-                    )
-                    return@withContext ApiResult.Error(
-                        exception = exception,
-                        message = errorMessage
-                    )
-                }
                 
                 // Step 3: Build AJAX URL and make request
                 val ajaxUrl = HtmlParser.buildAjaxUrl(ajaxConfig, keyword)
@@ -404,6 +389,31 @@ class HebrewWordsRepository private constructor(context: Context) {
                     keyword = keyword,
                     statusCode = null,
                     htmlResponse = htmlContent
+                )
+                
+                // Try to use cached data as fallback
+                val cachedResult = dafMilaCacheDao.getCachedWordDetails(keyword)
+                if (cachedResult != null) {
+                    val cachedData = parseDafMilaJson(cachedResult.apiResponse)
+                    if (cachedData != null) {
+                        return@withContext ApiResult.Success(cachedData)
+                    }
+                }
+                
+                ApiResult.Error(
+                    exception = e,
+                    message = errorMessage
+                )
+            } catch (e: HtmlParsingException) {
+                // HTML parsing errors with rich context - preserve all details
+                val errorMessage = "HTML parsing failed: ${e.message}"
+                lastFetchDafMilaDetailsError = DafMilaDetailsError(
+                    exception = e,
+                    message = errorMessage,
+                    timestamp = Date(),
+                    keyword = keyword,
+                    statusCode = null,
+                    htmlResponse = e.htmlContent // Use the HTML from the exception
                 )
                 
                 // Try to use cached data as fallback

@@ -7,6 +7,30 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 /**
+ * Exception thrown when HTML parsing fails, preserving context for debugging
+ */
+class HtmlParsingException(
+    message: String,
+    val htmlContent: String,
+    val jsObject: String? = null,
+    cause: Throwable? = null
+) : Exception(message, cause) {
+    
+    override fun toString(): String {
+        return buildString {
+            appendLine(super.toString())
+            appendLine("HTML Content length: ${htmlContent.length} characters")
+            jsObject?.let {
+                appendLine("Extracted JS Object: $it")
+            }
+            cause?.let {
+                appendLine("Caused by: ${it.javaClass.simpleName}: ${it.message}")
+            }
+        }
+    }
+}
+
+/**
  * Utility class for parsing HTML content
  */
 object HtmlParser {
@@ -45,34 +69,41 @@ object HtmlParser {
      * Extract the ahl_daf_mila_ajax JavaScript variable from HTML content
      * 
      * @param htmlContent The HTML content containing the JavaScript variable
-     * @return The parsed AhlDafMilaAjax object, or null if not found or parsing failed
+     * @return The parsed AhlDafMilaAjax object
+     * @throws HtmlParsingException if the variable is not found or parsing fails
      */
-    fun extractAhlDafMilaAjax(htmlContent: String): AhlDafMilaAjax? {
-        try {
-            // Look for the JavaScript variable declaration
-            val variablePattern = Regex(
-                """var\s+ahl_daf_mila_ajax\s*=\s*(\{[^}]+\});?""",
-                RegexOption.DOT_MATCHES_ALL
+    fun extractAhlDafMilaAjax(htmlContent: String): AhlDafMilaAjax {
+        // Look for the JavaScript variable declaration
+        val variablePattern = Regex(
+            """var\s+ahl_daf_mila_ajax\s*=\s*(\{[^}]+\});?""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        
+        val matchResult = variablePattern.find(htmlContent)
+            ?: throw HtmlParsingException(
+                "ahl_daf_mila_ajax variable not found in HTML content",
+                htmlContent
             )
-            
-            val matchResult = variablePattern.find(htmlContent)
-                ?: return null
-            
-            // Extract the JavaScript object part
-            val jsObject = matchResult.groupValues[1]
-            
-            // Convert JavaScript object syntax to valid JSON
-            val jsonString = convertJsObjectToJson(jsObject)
-            
-            // Parse the JSON into our data class
-            return gson.fromJson(jsonString, AhlDafMilaAjax::class.java)
-            
+        
+        // Extract the JavaScript object part
+        val jsObject = matchResult.groupValues[1]
+        
+        try {
+            // Parse the JSON directly (it's already valid JSON)
+            return gson.fromJson(jsObject, AhlDafMilaAjax::class.java)
+                ?: throw HtmlParsingException(
+                    "Failed to parse JSON into AhlDafMilaAjax object (gson returned null)",
+                    htmlContent,
+                    jsObject
+                )
+                
         } catch (e: JsonSyntaxException) {
-            e.printStackTrace()
-            return null
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return null
+            throw HtmlParsingException(
+                "JSON syntax error while parsing ahl_daf_mila_ajax",
+                htmlContent,
+                jsObject,
+                e
+            )
         }
     }
     
@@ -100,22 +131,7 @@ object HtmlParser {
         return "${ajaxConfig.ajaxUrl}?action=get_mila_data&nonce=${ajaxConfig.nonce}&search_string=$encodedSearchString"
     }
     
-    /**
-     * Convert JavaScript object syntax to valid JSON
-     * Adds quotes around unquoted keys and handles single quotes
-     * 
-     * @param jsObject The JavaScript object string
-     * @return Valid JSON string
-     */
-    private fun convertJsObjectToJson(jsObject: String): String {
-        return jsObject
-            // Replace single quotes with double quotes
-            .replace("'", "\"")
-            // Add quotes around unquoted keys (word characters followed by colon)
-            .replace(Regex("""(\w+):"""), "\"$1\":")
-            // Clean up any extra whitespace
-            .trim()
-    }
+
     
     /**
      * Remove script tags and their content from HTML

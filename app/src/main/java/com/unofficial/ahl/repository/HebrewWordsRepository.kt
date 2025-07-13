@@ -329,7 +329,10 @@ class HebrewWordsRepository private constructor(context: Context) {
                 // Step 4: Parse the nested JSON data
                 val dafMilaData = parseDafMilaJson(ajaxResponse.data)
                 if (dafMilaData == null) {
-                    val exception = InvalidDataException("Failed to parse response data")
+                    val exception = InvalidDataException(
+                        "Failed to parse response data from: [" +
+                        ajaxUrl + "]: " + ajaxResponse.data
+                        )
                     val errorMessage = "Could not parse the detailed word data from response"
                     lastFetchDafMilaDetailsError = DafMilaDetailsError(
                         exception = exception,

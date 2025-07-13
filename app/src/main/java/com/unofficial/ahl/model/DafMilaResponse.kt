@@ -23,7 +23,7 @@ data class DafMilaResponse(
     val halufonList: List<Any>?, // Empty array in sample, keeping as flexible type
     
     @SerializedName("MunnahimList")
-    val munnahimList: List<Any>?, // null in sample, keeping as flexible type
+    val munnahimList: MunnahimList?,
     
     @SerializedName("IndexName")
     val indexName: String?,
@@ -265,4 +265,92 @@ data class TkufaItem(
     
     @SerializedName("Sof_Tkufa")
     val sofTkufa: String?
+) 
+
+/**
+ * Munnah (terminology) list information
+ */
+data class MunnahimList(
+    @SerializedName("ReshimaMelleha")
+    val reshimaMelleha: String?,
+    
+    @SerializedName("KoteretMaagarMunnahim")
+    val koteretMaagarMunnahim: String?,
+    
+    @SerializedName("KtaimHtml")
+    val ktaimHtml: List<KetaHtml>?,
+    
+    @SerializedName("Info")
+    val info: String?
+)
+
+/**
+ * HTML entry item in KtaimHtml list
+ */
+data class KetaHtml(
+    @SerializedName("DataKodKeta")
+    val dataKodKeta: Int,
+    
+    @SerializedName("KetaNose")
+    val ketaNose: String?,
+    
+    @SerializedName("HearaLeHatsaga")
+    val hearaLeHatsaga: String?,
+    
+    @SerializedName("KetaPilluahLeMillon")
+    val ketaPilluahLeMillon: List<PilluahLeMillon>?,
+    
+    @SerializedName("Halakim")
+    val halakim: List<Helek>?
+)
+
+/**
+ * Dictionary reference entry
+ */
+data class PilluahLeMillon(
+    @SerializedName("href")
+    val href: String?,
+    
+    @SerializedName("txt")
+    val txt: String?
+)
+
+/**
+ * Part/section information in Halakim list
+ */
+data class Helek(
+    @SerializedName("Nirdafim")
+    val nirdafim: String?,
+    
+    @SerializedName("HearatMesumman")
+    val hearatMesumman: String?,
+    
+    @SerializedName("Mesummanim")
+    val mesummanim: List<Any>?,
+    
+    @SerializedName("HelekHesber")
+    val helekHesber: String?,
+    
+    @SerializedName("KvutsaHesber")
+    val kvutsaHesber: String?,
+    
+    @SerializedName("NirdafHesber")
+    val nirdafHesber: String?,
+    
+    @SerializedName("NirdafLink")
+    val nirdafLink: NirdafLink?
+)
+
+/**
+ * Link information for synonyms
+ */
+data class NirdafLink(
+    @SerializedName("href")
+    val href: String?,
+    
+    @SerializedName("txt")
+    val txt: String?,
+    
+    @SerializedName("safa")
+    val safa: String?
 ) 
